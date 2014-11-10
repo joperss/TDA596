@@ -1,0 +1,4 @@
+# Ignore keyfiles
+*.publickey
+*.privatekey
+
