@@ -26,12 +26,12 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
     "Content-length: %i\r\n\r\n%s" % (len(htmlresponse), htmlresponse))
     stopcomm(thiscommhandle)   
   elif msgheader.startswith( 'POST' ):
-    mycontext['htmlinputtable'] = mycontext['htmlinputtable'] + "<p>" + msgheader.split('comment=')[-1] + "</p>"
+    mycontext['htmlinputtable'] = mycontext['htmlinputtable'] + "<p>" + msgheader.split('comment=')[-1] + "</p>" # Update local vessel blackboard
     htmlresponse = htmlpartone + mycontext['htmlinputtable'] + htmlparttwo
     sockobj.send("HTTP/1.1 200 OK\r\nContent-type: text/html\r\n" + \
     "Content-length: %i\r\n\r\n%s" % (len(htmlresponse), htmlresponse))
 
-    # Update all vessels blackboard model. (Still need to hit refresh)
+    # Update all vessels blackboard model. (Still need to hit refresh on remote hosts)
     for ipn in mycontext['vessels']:
       if(ipn != getmyip()):
         s = openconn(ipn, 63112) 
