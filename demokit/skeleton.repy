@@ -7,7 +7,7 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
 </head>
 <body>
   <h2> Board Content</h2>"""
-#  htmlinputs = 
+
   htmlparttwo = """
   <br>
   <h3>Submit to board<h3>
@@ -17,42 +17,48 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
   </form>
 </body></html>"""
 
-
   if msgheader.startswith( 'GET' ):
     htmlresponse = htmlpartone + mycontext['htmlinputtable'] + htmlparttwo
     sockobj.send("HTTP/1.1 200 OK\r\nContent-type: text/html\r\n" + \
     "Content-length: %i\r\n\r\n%s" % (len(htmlresponse), htmlresponse))
     stopcomm(thiscommhandle)   
   elif msgheader.startswith( 'POST' ):
-	mycontext['htmlinputtable'] = mycontext['htmlinputtable'] + "<p>" + msgheader.split('comment=')[-1] + "</p>"
-	htmlresponse = htmlpartone + mycontext['htmlinputtable'] + htmlparttwo
-	sockobj.send("HTTP/1.1 200 OK\r\nContent-type: text/html\r\n" + \
-	"Content-length: %i\r\n\r\n%s" % (len(htmlresponse), htmlresponse))
-	stopcomm(thiscommhandle)   
+    mycontext['htmlinputtable'] = mycontext['htmlinputtable'] + "<p>" + msgheader.split('comment=')[-1] + "</p>"
+    htmlresponse = htmlpartone + mycontext['htmlinputtable'] + htmlparttwo
+    sockobj.send("HTTP/1.1 200 OK\r\nContent-type: text/html\r\n" + \
+    "Content-length: %i\r\n\r\n%s" % (len(htmlresponse), htmlresponse))
+
+    for ipn in mycontext['vessels']:
+      if(ipn != getmyip()):
+        s = openconn(ipn, 63112) 
+        s.send("<p>" + msgheader.split('comment=')[-1] + "</p>")
+
+    stopcomm(thiscommhandle)   
 	
-#    sockobj.send("HTTP/1.1 200 OK\r\nContent-type: text/html\r\n" + \
- #   "Content-length: %i\r\n\r\n%s" % (len(htmlresponse), htmlresponse))
- #   stopcomm(thiscommhandle) 
-	print msgheader.split('comment=')[-1]
   else:
-  	print "FEEL FREE TO CHANGE THE CODE"
-    
+    mycontext['htmlinputtable'] = mycontext['htmlinputtable'] + msgheader
 	
 if callfunc == 'initialize':
 
   mycontext['htmlinputtable'] = ""
-  if len(callargs) > 1:
+  if len(callargs) > 2:
     raise Exception("Too many call arguments")
 
   # Running remotely (assuming that we pass input argument only remotely):
   # whenever this vessel gets a connection on its IPaddress:Clearinghouseport it'll call function board
-  elif len(callargs) == 1:
+  elif len(callargs) == 2:
     port = int(callargs[0])
+	
+    mycontext['vessels'] = []
     ip = getmyip()
-
+    ipfile = open(callargs[1],'r')
+    for line in ipfile:
+      mycontext['vessels'].append(line.split()[0])
+	
   # Running locally:
   # whenever we get a connection on 127.0.0.1:12345 we'll call board
   else:
     port = 12345
     ip = '127.0.0.1'
+  
   listencommhandle = waitforconn(ip,port,board)
