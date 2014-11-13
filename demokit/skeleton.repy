@@ -25,6 +25,33 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
     sockobj.send("HTTP/1.1 200 OK\r\nContent-type: text/html\r\n" + \
     "Content-length: %i\r\n\r\n%s" % (len(htmlresponse), htmlresponse))   
   elif msgheader.startswith( 'POST' ):
+    # Trying to solve errors on my (Johan) computer
+    if not 'comment=' in msgheader:
+      timeout = 2
+      nextpart = ''
+      begin = getruntime()
+      while 1:
+        if 'comment=' in msgheader:
+          print 'comment= arrived late'
+          break
+        elif getruntime() - begin > timeout:
+          msgheader = ''
+          print 'Failed to retrieve messages, timeout'
+          break
+        try:
+          nextpart = sockobj.recv(1024)
+          if nextpart:
+            msgheader = msgheader + nextpart
+            begin = getruntime()
+          else:
+            sleep(0.1)
+        except Exception,e:
+          print 'Exception caught: ', str(e)
+          break
+
+
+
+
     mycontext['htmlinputtable'] = mycontext['htmlinputtable'] + "<p>" + msgheader.split('comment=')[-1] + "</p>" # Update local vessel blackboard
     htmlresponse = htmlpartone + mycontext['htmlinputtable'] + htmlparttwo
     sockobj.send("HTTP/1.1 200 OK\r\nContent-type: text/html\r\n" + \
@@ -35,7 +62,7 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
       if(ipn != getmyip()):
         s = openconn(ipn, mycontext['port']) 
         s.send("<p>" + msgheader.split('comment=')[-1] + "</p>")
-	
+  	
   # Message sent from POST to update the mycontext['htmlinputtable']
   # (is not sent to local node)
   else:
