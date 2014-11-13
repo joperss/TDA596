@@ -1,8 +1,23 @@
 def board(ip, port, sockobj, thiscommhandle, listencommhandle):
-  msgheader = sockobj.recv(1024) # Receive message, 
+  
+  # Sometimes the socket closes before sockobj.recv() finishes, but after msgheader is fully retrieved.
+  # This try except catches thoses cases
+  msgheader = ''
+  try:
+    msgheader = sockobj.recv(1024) # Receive message,
+  except Exception,e:
+    if msgheader:
+      print 'Exception caught: ', str(e)
+      print 'Continuing normal operation'
+      pass
+    else:
+      print 'Exception caught: ', str(e)
+      print 'Nothing received'
+      return
+
   
   # The HTML code is divided in two parts, htmlpartone and hmtlparttwo.
-  # mycontext['htmlinputtable'] i then inserted between them
+  # mycontext['htmlinputtable'] is then inserted between them
   htmlpartone = """<html><head>
   <meta content="text/html; charset=utf-8" http-equiv="content-type">
   <title>Blackboard GroupName</title>
@@ -25,16 +40,16 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
     sockobj.send("HTTP/1.1 200 OK\r\nContent-type: text/html\r\n" + \
     "Content-length: %i\r\n\r\n%s" % (len(htmlresponse), htmlresponse))   
   elif msgheader.startswith( 'POST' ):
-    # Trying to solve errors on my (Johan) computer
+    # If POST message does not contain a comment= section, try to fetch more
     if not 'comment=' in msgheader:
       timeout = 2
       nextpart = ''
       begin = getruntime()
-      while 1:
-        if 'comment=' in msgheader:
-          print 'comment= arrived late'
-          break
-        elif getruntime() - begin > timeout:
+      while not 'comment=' in msgheader:
+        # if 'comment=' in msgheader:
+        #   print 'comment= arrived late'
+        #   break
+        if getruntime() - begin > timeout:
           msgheader = ''
           print 'Failed to retrieve messages, timeout'
           break
@@ -45,12 +60,12 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
             begin = getruntime()
           else:
             sleep(0.1)
+
+        # Bad things happened, but don't want to kill the server
         except Exception,e:
+          msgheader = ''
           print 'Exception caught: ', str(e)
           break
-
-
-
 
     mycontext['htmlinputtable'] = mycontext['htmlinputtable'] + "<p>" + msgheader.split('comment=')[-1] + "</p>" # Update local vessel blackboard
     htmlresponse = htmlpartone + mycontext['htmlinputtable'] + htmlparttwo
@@ -69,7 +84,6 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
     mycontext['htmlinputtable'] = mycontext['htmlinputtable'] + msgheader
     return
   
-
   stopcomm(thiscommhandle)
 	
 if callfunc == 'initialize':
