@@ -1,18 +1,19 @@
 def board(ip, port, sockobj, thiscommhandle, listencommhandle):
   
   # Sometimes the socket closes before sockobj.recv() finishes, but after msgheader is fully retrieved.
-  # This try except catches thoses cases
+  # As far as we can tell, this only happens on some systems.
+  # This try-except handles thoses cases
   msgheader = ''
   try:
     msgheader = sockobj.recv(1024) # Receive message,
   except Exception,e:
     if msgheader:
       print 'Exception caught: ', str(e)
-      print 'Continuing normal operation'
-      pass
+      print 'Message received but socket was closed prematurely'
     else:
       print 'Exception caught: ', str(e)
       print 'Nothing received'
+      stopcomm(thiscommhandle)
       return
 
   
@@ -21,8 +22,8 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
   htmlpartone = """<html><head>
   <meta content="text/html; charset=utf-8" http-equiv="content-type">
   <title>Blackboard GroupName</title>
-</head>
-<body>
+  </head>
+  <body>
   <h2> Board Content</h2>"""
 
   htmlparttwo = """
@@ -32,7 +33,7 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
   <form action="" id="usrform" method="post">
   <input type="submit">
   </form>
-</body></html>"""
+  </body></html>"""
 
   # React depending on message type: HTTP GET or POST, or some other type of communication.
   if msgheader.startswith( 'GET' ):
@@ -46,26 +47,30 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
       nextpart = ''
       begin = getruntime()
       while not 'comment=' in msgheader:
-        # if 'comment=' in msgheader:
-        #   print 'comment= arrived late'
-        #   break
         if getruntime() - begin > timeout:
-          msgheader = ''
           print 'Failed to retrieve messages, timeout'
-          break
+          stopcomm(thiscommhandle)
+          return
         try:
           nextpart = sockobj.recv(1024)
-          if nextpart:
-            msgheader = msgheader + nextpart
-            begin = getruntime()
-          else:
-            sleep(0.1)
-
-        # Bad things happened, but don't want to kill the server
         except Exception,e:
-          msgheader = ''
-          print 'Exception caught: ', str(e)
-          break
+          # Same as above, socket closed after message was received, but beofre recv finished
+          if nextpart:
+            print 'Exception caught: ', str(e)
+            print 'Message received but socket was closed prematurely'
+          else:
+            print 'Exception caught: ', str(e)
+            print 'Comment not received'
+            stopcomm(thiscommhandle)
+            return
+
+        if nextpart:
+          msgheader = msgheader + nextpart
+          begin = getruntime()
+        else:
+          # Not sure how to handle this, could probably use pass too
+          sleep(0.1)
+
 
     mycontext['htmlinputtable'] = mycontext['htmlinputtable'] + "<p>" + msgheader.split('comment=')[-1] + "</p>" # Update local vessel blackboard
     htmlresponse = htmlpartone + mycontext['htmlinputtable'] + htmlparttwo
@@ -77,17 +82,17 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
       if(ipn != getmyip()):
         s = openconn(ipn, mycontext['port']) 
         s.send("<p>" + msgheader.split('comment=')[-1] + "</p>")
+        s.close
   	
   # Message sent from POST to update the mycontext['htmlinputtable']
   # (is not sent to local node)
   else:
     mycontext['htmlinputtable'] = mycontext['htmlinputtable'] + msgheader
-    return
   
   stopcomm(thiscommhandle)
 	
 if callfunc == 'initialize':
-
+  mycontext['vessels'] = [] # Dictionary for all vessels (not scalable solution)
   mycontext['htmlinputtable'] = "" # The blackboard
   if len(callargs) > 2:
     raise Exception("Too many call arguments")
@@ -98,7 +103,6 @@ if callfunc == 'initialize':
     port = int(callargs[0])
     mycontext['port'] = port
 
-    mycontext['vessels'] = [] # Dictionary for all vessels (not scalable solution)
     ip = getmyip()
     ipfile = open(callargs[1],'r')
     for line in ipfile:
