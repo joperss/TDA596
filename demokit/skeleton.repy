@@ -49,7 +49,7 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
           index += 1
 
         mycontext['leader'] =  vesselList[leaderIndex]
-        mycontext['htmlinputtable'] = "<p>" + mycontext['leader'] + "</p>"
+        mycontext['htmlinputtable'] = "<p>" + mycontext['leader'] + " has value " + str(max) "</p>"
         # Send CONF
         print "Sending conf message, starts running phase"
         msg = "CONFIRM:" + mycontext['leader']
