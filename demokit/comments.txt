@@ -1,1 +1,6 @@
 Current solution does not support messages that are bigger than 1024.
+Fråga om man ska använda locks
+Lägg till random number på webbsidan
+Kolla om det räcker att f5:a på  två datorer
+lös randomnummer
+Nåt om att Emils string ska fixas
