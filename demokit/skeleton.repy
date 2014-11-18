@@ -90,6 +90,7 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
     mycontext['htmlinputtable'] = mycontext['htmlinputtable'] + msgheader
   
   stopcomm(thiscommhandle)
+
 	
 if callfunc == 'initialize':
   mycontext['vessels'] = [] # Dictionary for all vessels (not scalable solution)
@@ -113,5 +114,16 @@ if callfunc == 'initialize':
   else:
     port = 12345
     ip = '127.0.0.1'
-  
+  mycontext['electnum'] = int(randomfloat()*1000)
+  leaderElection()
+
   listencommhandle = waitforconn(ip,port,board)
+
+
+def leaderElection():
+  mycontext['leader'] = ''
+  nextvessel = mycontext[mycontext['vessels'].index(getmyip()) + 1]
+  s = openconn(nextvessel, mycontext['port'])
+  s.send("ELECT:" + getmyip() + ":" + mycontext['electnum'])
+  s.close
+  while mycontext['leader'] = '':
