@@ -1,0 +1,1 @@
+Current solution does not support messages that are bigger than 1024.
