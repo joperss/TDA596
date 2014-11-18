@@ -1,27 +1,76 @@
-def board(ip, port, sockobj, thiscommhandle, listencommhandle):
+def sendMessage(ip, port, msg, numberOfTries=5, tryNumber=0):
+  try:
+    s = openconn(ip, port)
+    print "Trying to send message"
+    s.send(msg)
+    print "Message sent"
+    s.close
+  except Exception, e:
+    print 'Exception caught: ', str(e)
+    print "Neighbour not ready, will try again in 1 s"
+    if(tryNumber < numberOfTries):
+      sleep(1)
+      sendMessage(ip, port, msg, numberOfTries, tryNumber+1)
+    else:
+      raise e
+def leaderBroadcast():
+  for ipn in mycontext['vessels']:
+    if(ipn != mycontext['leader']):
+      msg ="UPT" + mycontext['htmlinputtable']
+      sendMessage(ipn, mycontext['port'], msg)
 
+
+# Sets leader to '' and sends the vessel's first message in the leader election
+def startLeaderElection():
+  mycontext['leader'] = ''
+  print "Opening connection to ip " + mycontext['nextvessel'] + " on port " + str(mycontext['port'])
+  
+  msg = "ELECT:" + getmyip() + ":" + str(mycontext['electnum'])
+  sendMessage(mycontext['nextvessel'], mycontext['port'], msg)  
+
+def board(ip, port, sockobj, thiscommhandle, listencommhandle):
+  print "Request received"
   if mycontext['state'] == 'ELECTION':
     msgheader = sockobj.recv(1024)
     if msgheader.startswith('ELECT'):
       if msgheader.split(':')[1] == getmyip():
         msgheader = msgheader[6:]
         vesselList = msgheader.split(':')
+        index = 0
         max = 0
         leaderIndex = 0
+        print vesselList
         for n in vesselList:
-          if n % 2 != 0:
+          if index % 2 != 0:
             # BOGUS: bad if n == max
             if n > max:
               max = n
-        leader = vesselList.index(max) - 1 
-        # Skicka ut
+              leaderIndex = index-1
+          index += 1
+
+        mycontext['leader'] =  vesselList[leaderIndex]
+        mycontext['htmlinputtable'] = "<p>" + mycontext['leader'] + "</p>"
+        # Send CONF
+        print "Sending conf message, starts running phase"
+        msg = "CONFIRM:" + mycontext['leader']
+        sendMessage(mycontext['nextvessel'], mycontext['port'], msg)
+
+        mycontext['state'] = 'RUNNING'
+
       else:
         # Add values to message
+        print "Sends to next vessel " + mycontext['nextvessel'] + " at port " + str(mycontext['port'])
+        msg = msgheader + ":" + getmyip() + ":" +  str(mycontext['electnum'])
+        sendMessage(mycontext['nextvessel'], mycontext['port'], msg)
+
     elif msgheader.startswith('CONFIRM'):
       mycontext['leader'] = msgheader.split(':')[-1]
-      s = openconn(nextvessel, mycontext['port'])
-      s.send("CONFIRM:" + mycontext['leader'])
-      s.close
+      mycontext['htmlinputtable'] = "<p>" + mycontext['leader'] + "</p>"
+
+
+      msg = msgheader
+      sendMessage(mycontext['nextvessel'], mycontext['port'], msg)
+      
       mycontext['state'] = 'RUNNING'
   elif mycontext['state'] == 'RUNNING': 
 
@@ -103,12 +152,16 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
   #    for ipn in mycontext['vessels']:
         #  if(ipn != getmyip()):
       if (getmyip()!=mycontext['leader']):
-        s = openconn(mycontext['leader'], mycontext['port']) 
-        s.send("<p>" + msgheader.split('comment=')[-1] + "</p>")
-        s.close
+        msg = "UPT" + "<p>" + msgheader.split('comment=')[-1] + "</p>"
+        sendMessage(mycontext['leader'], mycontext['port'], msg)
+
+        #s = openconn(mycontext['leader'], mycontext['port']) 
+        #s.send("UPT" + "<p>" + msgheader.split('comment=')[-1] + "</p>")
+        #s.close
       else:
         print("The leader updated self and added: " + msgheader.split('comment=')[-1] + "\n")
         mycontext['htmlinputtable'] = mycontext['htmlinputtable'] + "<p>" + msgheader.split('comment=')[-1] + "</p>"
+        leaderBroadcast()
       
       htmlresponse = htmlpartone + mycontext['htmlinputtable'] + htmlparttwo
       sockobj.send("HTTP/1.1 200 OK\r\nContent-type: text/html\r\n" + \
@@ -117,26 +170,23 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
   	
     # Message sent from POST to update the mycontext['htmlinputtable']
     # (is not sent to local node)
-    else:
+    elif msgheader.startswith( 'UPT' ):
       if (getmyip()==mycontext['leader']):
-        mycontext['htmlinputtable'] = mycontext['htmlinputtable'] + msgheader
+        mycontext['htmlinputtable'] = mycontext['htmlinputtable'] + msgheader[3:]
         print("New value in leader:" + mycontext['htmlinputtable'])
-        for ipn in mycontext['vessels']:
-          if(ipn != getmyip()):
-            s = openconn(ipn, mycontext['port']) 
-            s.send(mycontext['htmlinputtable'])
-            s.close
+        leaderBroadcast()
       else:
-        mycontext['htmlinputtable'] = msgheader
+        mycontext['htmlinputtable'] = msgheader[3:]
         print("New value in node:" + mycontext['htmlinputtable'])
 
     stopcomm(thiscommhandle)
 
 	
 if callfunc == 'initialize':
-  mycontext['state'] = 'INIT'
+  mycontext['state'] = 'ELECTION'
   mycontext['vessels'] = [] # Dictionary for all vessels (not scalable solution)
   mycontext['htmlinputtable'] = "" # The blackboard
+
   if len(callargs) > 2:
     raise Exception("Too many call arguments")
 
@@ -150,21 +200,20 @@ if callfunc == 'initialize':
     ipfile = open(callargs[1],'r')
     for line in ipfile:
       mycontext['vessels'].append(line.split()[0])
-	
+
   # Running locally:
   # whenever we get a connection on 127.0.0.1:12345 we'll call board
   else:
     port = 12345
     ip = '127.0.0.1'
+  
+
+  index = mycontext['vessels'].index(getmyip()) + 1
+  length = len(mycontext['vessels'])
+  mycontext['nextvessel'] = mycontext['vessels'][index % length]
+
   mycontext['electnum'] = int(randomfloat()*1000)
   listencommhandle = waitforconn(ip,port,board)
+ # sleep(2)
   startLeaderElection()
 
-
-def startLeaderElection():
-  mycontext['leader'] = ''
-  mycontext['nextvessel'] = mycontext[(mycontext['vessels'].index(getmyip()) + 1)%len(mycontext['vessels'])]
-  s = openconn(nextvessel, mycontext['port'])
-  s.send("ELECT:" + getmyip() + ":" + mycontext['electnum'])
-  s.close
-  mycontext['state'] = 'ELECTION'
