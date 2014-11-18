@@ -1,114 +1,140 @@
 def board(ip, port, sockobj, thiscommhandle, listencommhandle):
-  
-  # Sometimes the socket closes before sockobj.recv() finishes, but after msgheader is fully retrieved.
-  # As far as we can tell, this only happens on some systems.
-  # This try-except handles thoses cases
-  msgheader = ''
-  try:
-    msgheader = sockobj.recv(1024) # Receive message,
-  except Exception,e:
-    if msgheader:
-      print 'Exception caught: ', str(e)
-      print 'Message received but socket was closed prematurely'
-    else:
-      print 'Exception caught: ', str(e)
-      print 'Nothing received'
-      stopcomm(thiscommhandle)
-      return
 
-  
-  # The HTML code is divided in two parts, htmlpartone and hmtlparttwo.
-  # mycontext['htmlinputtable'] is then inserted between them
-  htmlpartone = """<html><head>
-  <meta content="text/html; charset=utf-8" http-equiv="content-type">
-  <title>Blackboard GroupName</title>
-  </head>
-  <body>
-  <h2> Board Content</h2>"""
+  if mycontext['state'] == 'ELECTION':
+    msgheader = sockobj.recv(1024)
+    if msgheader.startswith('ELECT'):
+      if msgheader.split(':')[1] == getmyip():
+        msgheader = msgheader[6:]
+        vesselList = msgheader.split(':')
+        max = 0
+        leaderIndex = 0
+        for n in vesselList:
+          if n % 2 != 0:
+            # BOGUS: bad if n == max
+            if n > max:
+              max = n
+        leader = vesselList.index(max) - 1 
+        # Skicka ut
+      else:
+        # Add values to message
+    elif msgheader.startswith('CONFIRM'):
+      mycontext['leader'] = msgheader.split(':')[-1]
+      s = openconn(nextvessel, mycontext['port'])
+      s.send("CONFIRM:" + mycontext['leader'])
+      s.close
+      mycontext['state'] = 'RUNNING'
+  elif mycontext['state'] == 'RUNNING': 
 
-  htmlparttwo = """
-  <br>
-  <h3>Submit to board<h3>
-  <textarea rows="4" cols="50" name="comment" form="usrform"></textarea>
-  <form action="" id="usrform" method="post">
-  <input type="submit">
-  </form>
-  </body></html>"""
+    # Sometimes the socket closes before sockobj.recv() finishes, but after msgheader is fully retrieved.
+    # As far as we can tell, this only happens on some systems.
+    # This try-except handles thoses cases
+    msgheader = ''
+    try:
+      msgheader = sockobj.recv(1024) # Receive message,
+    except Exception,e:
+      if msgheader:
+        print 'Exception caught: ', str(e)
+        print 'Message received but socket was closed prematurely'
+      else:
+        print 'Exception caught: ', str(e)
+        print 'Nothing received'
+        stopcomm(thiscommhandle)
+        return
 
-  # React depending on message type: HTTP GET or POST, or some other type of communication.
-  if msgheader.startswith( 'GET' ):
-    htmlresponse = htmlpartone + mycontext['htmlinputtable'] + htmlparttwo
-    sockobj.send("HTTP/1.1 200 OK\r\nContent-type: text/html\r\n" + \
-    "Content-length: %i\r\n\r\n%s" % (len(htmlresponse), htmlresponse))   
-  elif msgheader.startswith( 'POST' ):
-    # If POST message does not contain a comment= section, try to fetch more
-    if not 'comment=' in msgheader:
-      timeout = 2
-      nextpart = ''
-      begin = getruntime()
-      while not 'comment=' in msgheader:
-        if getruntime() - begin > timeout:
-          print 'Failed to retrieve messages, timeout'
-          stopcomm(thiscommhandle)
-          return
-        try:
-          nextpart = sockobj.recv(1024)
-        except Exception,e:
-          # Same as above, socket closed after message was received, but beofre recv finished
-          if nextpart:
-            print 'Exception caught: ', str(e)
-            print 'Message received but socket was closed prematurely'
-          else:
-            print 'Exception caught: ', str(e)
-            print 'Comment not received'
+    
+    # The HTML code is divided in two parts, htmlpartone and hmtlparttwo.
+    # mycontext['htmlinputtable'] is then inserted between them
+    htmlpartone = """<html><head>
+    <meta content="text/html; charset=utf-8" http-equiv="content-type">
+    <title>Blackboard GroupName</title>
+    </head>
+    <body>
+    <h2> Board Content</h2>"""
+
+    htmlparttwo = """
+    <br>
+    <h3>Submit to board<h3>
+    <textarea rows="4" cols="50" name="comment" form="usrform"></textarea>
+    <form action="" id="usrform" method="post">
+    <input type="submit">
+    </form>
+    </body></html>"""
+
+    # React depending on message type: HTTP GET or POST, or some other type of communication.
+    if msgheader.startswith( 'GET' ):
+      htmlresponse = htmlpartone + mycontext['htmlinputtable'] + htmlparttwo
+      sockobj.send("HTTP/1.1 200 OK\r\nContent-type: text/html\r\n" + \
+      "Content-length: %i\r\n\r\n%s" % (len(htmlresponse), htmlresponse))   
+    elif msgheader.startswith( 'POST' ):
+      # If POST message does not contain a comment= section, try to fetch more
+      if not 'comment=' in msgheader:
+        timeout = 2
+        nextpart = ''
+        begin = getruntime()
+        while not 'comment=' in msgheader:
+          if getruntime() - begin > timeout:
+            print 'Failed to retrieve messages, timeout'
             stopcomm(thiscommhandle)
             return
+          try:
+            nextpart = sockobj.recv(1024)
+          except Exception,e:
+            # Same as above, socket closed after message was received, but beofre recv finished
+            if nextpart:
+              print 'Exception caught: ', str(e)
+              print 'Message received but socket was closed prematurely'
+            else:
+              print 'Exception caught: ', str(e)
+              print 'Comment not received'
+              stopcomm(thiscommhandle)
+              return
 
-        if nextpart:
-          msgheader = msgheader + nextpart
-          begin = getruntime()
-        else:
-          # Not sure how to handle this, could probably use pass too
-          sleep(0.1)
+          if nextpart:
+            msgheader = msgheader + nextpart
+            begin = getruntime()
+          else:
+            # Not sure how to handle this, could probably use pass too
+            sleep(0.1)
 
 
 
 
-    # Update all vessels blackboard model. (Still need to hit refresh on remote hosts)
-#    for ipn in mycontext['vessels']:
-      #  if(ipn != getmyip()):
-    if (getmyip()!=mycontext['leader']):
-      s = openconn(mycontext['leader'], mycontext['port']) 
-      s.send("<p>" + msgheader.split('comment=')[-1] + "</p>")
-      s.close
+      # Update all vessels blackboard model. (Still need to hit refresh on remote hosts)
+  #    for ipn in mycontext['vessels']:
+        #  if(ipn != getmyip()):
+      if (getmyip()!=mycontext['leader']):
+        s = openconn(mycontext['leader'], mycontext['port']) 
+        s.send("<p>" + msgheader.split('comment=')[-1] + "</p>")
+        s.close
+      else:
+        print("The leader updated self and added: " + msgheader.split('comment=')[-1] + "\n")
+        mycontext['htmlinputtable'] = mycontext['htmlinputtable'] + "<p>" + msgheader.split('comment=')[-1] + "</p>"
+      
+      htmlresponse = htmlpartone + mycontext['htmlinputtable'] + htmlparttwo
+      sockobj.send("HTTP/1.1 200 OK\r\nContent-type: text/html\r\n" + \
+      "Content-length: %i\r\n\r\n%s" % (len(htmlresponse), htmlresponse))
+
+  	
+    # Message sent from POST to update the mycontext['htmlinputtable']
+    # (is not sent to local node)
     else:
-      print("The leader updated self and added: " + msgheader.split('comment=')[-1] + "\n")
-      mycontext['htmlinputtable'] = mycontext['htmlinputtable'] + "<p>" + msgheader.split('comment=')[-1] + "</p>"
-    
-    htmlresponse = htmlpartone + mycontext['htmlinputtable'] + htmlparttwo
-    sockobj.send("HTTP/1.1 200 OK\r\nContent-type: text/html\r\n" + \
-    "Content-length: %i\r\n\r\n%s" % (len(htmlresponse), htmlresponse))
+      if (getmyip()==mycontext['leader']):
+        mycontext['htmlinputtable'] = mycontext['htmlinputtable'] + msgheader
+        print("New value in leader:" + mycontext['htmlinputtable'])
+        for ipn in mycontext['vessels']:
+          if(ipn != getmyip()):
+            s = openconn(ipn, mycontext['port']) 
+            s.send(mycontext['htmlinputtable'])
+            s.close
+      else:
+        mycontext['htmlinputtable'] = msgheader
+        print("New value in node:" + mycontext['htmlinputtable'])
 
-	
-  # Message sent from POST to update the mycontext['htmlinputtable']
-  # (is not sent to local node)
-  else:
-    if (getmyip()==mycontext['leader']):
-      mycontext['htmlinputtable'] = mycontext['htmlinputtable'] + msgheader
-      print("New value in leader:" + mycontext['htmlinputtable'])
-      for ipn in mycontext['vessels']:
-        if(ipn != getmyip()):
-          s = openconn(ipn, mycontext['port']) 
-          s.send(mycontext['htmlinputtable'])
-          s.close
-    else:
-      mycontext['htmlinputtable'] = msgheader
-      print("New value in node:" + mycontext['htmlinputtable'])
-
-  stopcomm(thiscommhandle)
+    stopcomm(thiscommhandle)
 
 	
 if callfunc == 'initialize':
+  mycontext['state'] = 'INIT'
   mycontext['vessels'] = [] # Dictionary for all vessels (not scalable solution)
   mycontext['htmlinputtable'] = "" # The blackboard
   if len(callargs) > 2:
@@ -131,15 +157,14 @@ if callfunc == 'initialize':
     port = 12345
     ip = '127.0.0.1'
   mycontext['electnum'] = int(randomfloat()*1000)
-  leaderElection()
-
   listencommhandle = waitforconn(ip,port,board)
+  startLeaderElection()
 
 
-def leaderElection():
+def startLeaderElection():
   mycontext['leader'] = ''
-  nextvessel = mycontext[mycontext['vessels'].index(getmyip()) + 1]
+  mycontext['nextvessel'] = mycontext[(mycontext['vessels'].index(getmyip()) + 1)%len(mycontext['vessels'])]
   s = openconn(nextvessel, mycontext['port'])
   s.send("ELECT:" + getmyip() + ":" + mycontext['electnum'])
   s.close
-  while mycontext['leader'] = '':
+  mycontext['state'] = 'ELECTION'
