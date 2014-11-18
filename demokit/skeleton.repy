@@ -111,7 +111,6 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
 if callfunc == 'initialize':
   mycontext['vessels'] = [] # Dictionary for all vessels (not scalable solution)
   mycontext['htmlinputtable'] = "" # The blackboard
-  mycontext['leader'] = "128.138.207.54";
   if len(callargs) > 2:
     raise Exception("Too many call arguments")
 
