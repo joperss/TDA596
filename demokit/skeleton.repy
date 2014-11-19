@@ -1,16 +1,28 @@
 def sendMessage(ip, port, msg, numberOfTries=5, tryNumber=0):
   try:
+    print "Waiting for lock"
+    mycontext['socketLock'].acquire()
+    print "I got the lock"
     s = openconn(ip, port)
     print "Trying to send message"
     s.send(msg)
     print "Message sent"
     s.close
+    sleep(0.4)   
+    mycontext['socketLock'].release()
+    print "I droped the lock"
   except Exception, e:
     print 'Exception caught: ', str(e)
     print "Neighbour not ready, will try again in 1 s"
     if(tryNumber < numberOfTries):
-      sleep(1)
+    #  sleep(1)
+      print "Socket wasn't ready, has to wait"
+      sleep(0.4)   
+
+      mycontext['socketLock'].release()
+#      sleep(0.1)
       sendMessage(ip, port, msg, numberOfTries, tryNumber+1)
+   #   raise e
     else:
       raise e
 def leaderBroadcast():
@@ -49,7 +61,7 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
           index += 1
 
         mycontext['leader'] =  vesselList[leaderIndex]
-        mycontext['htmlinputtable'] = "<p>" + mycontext['leader'] + " has value " + str(max) "</p>"
+        mycontext['htmlinputtable'] = "<p>" + mycontext['leader'] + " has value " + str(max) + "</p>"
         # Send CONF
         print "Sending conf message, starts running phase"
         msg = "CONFIRM:" + mycontext['leader']
@@ -59,7 +71,7 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
 
       else:
         # Add values to message
-        print "Sends to next vessel " + mycontext['nextvessel'] + " at port " + str(mycontext['port'])
+     #   print "Sends to next vessel " + mycontext['nextvessel'] + " at port " + str(mycontext['port'])
         msg = msgheader + ":" + getmyip() + ":" +  str(mycontext['electnum'])
         sendMessage(mycontext['nextvessel'], mycontext['port'], msg)
 
@@ -186,6 +198,8 @@ if callfunc == 'initialize':
   mycontext['state'] = 'ELECTION'
   mycontext['vessels'] = [] # Dictionary for all vessels (not scalable solution)
   mycontext['htmlinputtable'] = "" # The blackboard
+  mycontext['socketLock'] = getlock()
+
 
   if len(callargs) > 2:
     raise Exception("Too many call arguments")

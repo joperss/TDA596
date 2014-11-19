@@ -1,1 +1,6 @@
 Current solution does not support messages that are bigger than 1024.
+
+
+When a vessel has sent its conf-message it dosen't not bother to pass forward other vessels
+conf and elect message. With the assumption that all connection are reliable, we feel that this 
+is the most reasonable way to handle it. Other vessels will still receive our conf message.
