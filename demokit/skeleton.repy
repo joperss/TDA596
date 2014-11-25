@@ -4,6 +4,19 @@ def addMessageToInputTable(msg):
   leaderBroadcast()
   mycontext['inputTableLock'].release()
 
+def upDateLocalBoard(msgheader):
+  version = msgheader[3:].split(":")[-1] ## MOST FIX, MUTAL ECXLUCION
+  mycontext['upDateLocalBoardLock'].acquire()
+  if(int(mycontext['version']) < version):
+#        print msgheader
+    msg = msgheader[3:].split(":")[0]
+#       print ("\n\n\nAdding to board: " + msg)
+    mycontext['htmlinputtable'] = msg
+    mycontext['version'] = version
+    print ("UPDATED BOARD")
+  mycontext['upDateLocalBoardLock'].release()
+
+
 def receiveMessage(sockobj):
 #  print("Start recieving")
   msgheader = ''
@@ -243,14 +256,8 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
       else:
         # Local modification in non-leader vessel, only place, don't need to be protected
         # Check if newer version than current
-        version = msgheader[3:].split(":")[-1] ## MOST FIX, MUTAL ECXLUCION
-        if(int(mycontext['version']) < version):
-  #        print msgheader
-          msg = msgheader[3:].split(":")[0]
-   #       print ("\n\n\nAdding to board: " + msg)
-          mycontext['htmlinputtable'] = msg
-          mycontext['version'] = version
-          print ("UPDATED BOARD")
+        
+        upDateLocalBoard(msgheader)
 
     stopcomm(thiscommhandle)
 
@@ -261,6 +268,7 @@ if callfunc == 'initialize':
   mycontext['htmlinputtable'] = "" # The blackboard
   mycontext['socketLock'] = getlock()
   mycontext['inputTableLock'] = getlock()
+  mycontext['upDateLocalBoardLock'] = getlock()
   mycontext['version'] = 1
 
 
