@@ -16,6 +16,26 @@ def upDateLocalBoard(msgheader):
     print ("UPDATED BOARD")
   mycontext['upDateLocalBoardLock'].release()
 
+def sendHTTPOK(sockobj):
+  htmlpartone = """<html><head>
+    <meta content="text/html; charset=utf-8" http-equiv="content-type">
+    <title>Blackboard GroupName</title>
+    </head>
+    <body>
+    <h2> Board Content</h2>"""
+
+  htmlparttwo = """
+    <br>
+    <h3>Submit to board<h3>
+    <textarea rows="4" cols="50" name="comment" form="usrform"></textarea>
+    <form action="" id="usrform" method="post">
+    <input type="submit">
+    </form>
+    </body></html>"""
+  htmlresponse = htmlpartone + mycontext['htmlinputtable'] + htmlparttwo
+  sockobj.send("HTTP/1.1 200 OK\r\nContent-type: text/html\r\n" + \
+  "Content-length: %i\r\n\r\n%s" % (len(htmlresponse), htmlresponse))
+
 
 def receiveMessage(sockobj):
 #  print("Start recieving")
@@ -170,65 +190,17 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
     
     # The HTML code is divided in two parts, htmlpartone and hmtlparttwo.
     # mycontext['htmlinputtable'] is then inserted between them
-    htmlpartone = """<html><head>
-    <meta content="text/html; charset=utf-8" http-equiv="content-type">
-    <title>Blackboard GroupName</title>
-    </head>
-    <body>
-    <h2> Board Content</h2>"""
 
-    htmlparttwo = """
-    <br>
-    <h3>Submit to board<h3>
-    <textarea rows="4" cols="50" name="comment" form="usrform"></textarea>
-    <form action="" id="usrform" method="post">
-    <input type="submit">
-    </form>
-    </body></html>"""
 
     # React depending on message type: HTTP GET or POST, or some other type of communication.
     if msgheader.startswith( 'GET' ):
-      htmlresponse = htmlpartone + mycontext['htmlinputtable'] + htmlparttwo
-      sockobj.send("HTTP/1.1 200 OK\r\nContent-type: text/html\r\n" + \
-      "Content-length: %i\r\n\r\n%s" % (len(htmlresponse), htmlresponse))   
+      sendHTTPOK(sockobj)
+#      htmlresponse = htmlpartone + mycontext['htmlinputtable'] + htmlparttwo
+ #     sockobj.send("HTTP/1.1 200 OK\r\nContent-type: text/html\r\n" + \
+  #    "Content-length: %i\r\n\r\n%s" % (len(htmlresponse), htmlresponse))   
     elif msgheader.startswith( 'POST' ):
-      # If POST message does not contain a comment= section, try to fetch more
-      if not 'comment=' in msgheader:
-        timeout = 2
-        nextpart = ''
-        begin = getruntime()
-        while not 'comment=' in msgheader:
-          if getruntime() - begin > timeout:
-            print 'Failed to retrieve messages, timeout'
-            stopcomm(thiscommhandle)
-            return
-          try:
-            nextpart = sockobj.recv(1024)
-          except Exception,e:
-            # Same as above, socket closed after message was received, but beofre recv finished
-            if nextpart:
-              print 'Exception caught: ', str(e)
-              print 'Message received but socket was closed prematurely'
-            else:
-              print 'Exception caught: ', str(e)
-              print 'Comment not received'
-              stopcomm(thiscommhandle)
-              return
-
-          if nextpart:
-            msgheader = msgheader + nextpart
-            begin = getruntime()
-          else:
-            # Not sure how to handle this, could probably use pass too
-            sleep(0.1)
-
-
-
-
-      # Update all vessels blackboard model. (Still need to hit refresh on remote hosts)
-  #    for ipn in mycontext['vessels']:
-        #  if(ipn != getmyip()):
       if (getmyip()!=mycontext['leader']):
+        # Vessel is not leader, forwards the post request to the leader.
         msg = "UPT" + "<p>" + msgheader.split('comment=')[-1] + "</p>"
         sendMessage(mycontext['leader'], mycontext['port'], msg)
 
@@ -236,12 +208,13 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
         #s.send("UPT" + "<p>" + msgheader.split('comment=')[-1] + "</p>")
         #s.close
       else:
-        print("The leader updated self and added: " + msgheader.split('comment=')[-1] + "\n")
+        # Vessel is leader, updates the input table with lock protected method below
         addMessageToInputTable("<p>" + msgheader.split('comment=')[-1] + "</p>")
       
-      htmlresponse = htmlpartone + mycontext['htmlinputtable'] + htmlparttwo
-      sockobj.send("HTTP/1.1 200 OK\r\nContent-type: text/html\r\n" + \
-      "Content-length: %i\r\n\r\n%s" % (len(htmlresponse), htmlresponse))
+  #    htmlresponse = htmlpartone + mycontext['htmlinputtable'] + htmlparttwo
+  #    sockobj.send("HTTP/1.1 200 OK\r\nContent-type: text/html\r\n" + \
+  #    "Content-length: %i\r\n\r\n%s" % (len(htmlresponse), htmlresponse))
+      sendHTTPOK(sockobj)
 
   	
     # Message sent from POST to update the mycontext['htmlinputtable']
@@ -251,12 +224,10 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
       print ("Current version: " + str(mycontext['version']) + "\nMessage version: " + msgheader[3:].split(":")[-1])
 
       if (getmyip()==mycontext['leader']):
-  #      print ("\n\n\nAdding msgheader: \n\n\n" + msgheader[3:])
+        # Leader, modify mycontext board
         addMessageToInputTable(msgheader[3:])
       else:
-        # Local modification in non-leader vessel, only place, don't need to be protected
-        # Check if newer version than current
-        
+        # Checks if newer version than current, then replace local board view        
         upDateLocalBoard(msgheader)
 
     stopcomm(thiscommhandle)
