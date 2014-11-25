@@ -17,6 +17,9 @@ def upDateLocalBoard(msgheader):
   mycontext['upDateLocalBoardLock'].release()
 
 def sendHTTPOK(sockobj):
+  # The HTML code is divided in two parts, htmlpartone and hmtlparttwo.
+  # mycontext['htmlinputtable'] is then inserted between them
+
   htmlpartone = """<html><head>
     <meta content="text/html; charset=utf-8" http-equiv="content-type">
     <title>Blackboard GroupName</title>
@@ -32,6 +35,7 @@ def sendHTTPOK(sockobj):
     <input type="submit">
     </form>
     </body></html>"""
+
   htmlresponse = htmlpartone + mycontext['htmlinputtable'] + htmlparttwo
   sockobj.send("HTTP/1.1 200 OK\r\nContent-type: text/html\r\n" + \
   "Content-length: %i\r\n\r\n%s" % (len(htmlresponse), htmlresponse))
@@ -44,61 +48,37 @@ def receiveMessage(sockobj):
   nextpart = "placeholder"
   first = 1
   i = 1
-  #nextpart = sockobj.recv(1024)
-  # begin = getruntime()
+
   while first or len(nextpart) == 1024:
     if first:
       first = 0
-  #   nextpart = ''
-  #   if getruntime() - begin > timeout:
-  #     print 'Message timed out'
-  #     return
+
     try:
       nextpart = sockobj.recv(1024)
-   #   print (str(i) + "   " +nextpart)
       i += 1
       msgheader = msgheader + nextpart
-    #  nextpart = ""
-  #     nextpart = sockobj.recv(1024)
     except Exception, e:
       print 'Exception caught: ', str(e), ', in receiveMessage(). Will try again'
       nextpart = ""
-  #   #  if len(nextpart) > 0:
-  #    #   pass
-  #    # else:
-
-  #     return msgheader
-  #   print "Nextpart: " + nextpart
-  # print 'msgheader = ' + msgheader
- # print ("Stopped recieving and returned: " + msgheader)
   return msgheader
 
 
 def sendMessage(ip, port, msg, numberOfTries=1000, tryNumber=0):
   try:
-  #  print "Waiting for lock"
     mycontext['socketLock'].acquire()
-  #  print "I got the lock"
     s = openconn(ip, port)
-  #  print "Trying to send message"
     s.send(msg)
     print "Message sent"
     s.close
-#    sleep(0.4)   
     mycontext['socketLock'].release()
-   # print "I droped the lock"
   except Exception, e:
     print 'Exception caught: ', str(e)
     print "Neighbour not ready, will try again"
     if(tryNumber < numberOfTries):
-    #  sleep(1)
       print "Socket wasn't ready, will try again"
-   #   sleep(0.4)   
 
       mycontext['socketLock'].release()
-#      sleep(0.1)
       sendMessage(ip, port, msg, numberOfTries, tryNumber+1)
-   #   raise e
     else:
       raise e
 def leaderBroadcast():
@@ -107,7 +87,6 @@ def leaderBroadcast():
     if(ipn != mycontext['leader']):
       msg ="UPT" + mycontext['htmlinputtable'] + ":" + mycontext['version']
       sendMessage(ipn, mycontext['port'], msg)
-
 
 # Sets leader to '' and sends the vessel's first message in the leader election
 def startLeaderElection():
@@ -139,22 +118,19 @@ def handleELECTmessage(msgheader):
       print "Sending conf message, starts running phase"
       msg = "CONFIRM:" + mycontext['leader']
       sendMessage(mycontext['nextvessel'], mycontext['port'], msg)
-
       mycontext['state'] = 'RUNNING'
-
     else:
-      # Add values to message
-   #   print "Sends to next vessel " + mycontext['nextvessel'] + " at port " + str(mycontext['port'])
+   # Add values to message
       msg = msgheader + ":" + getmyip() + ":" +  str(mycontext['electnum'])
       sendMessage(mycontext['nextvessel'], mycontext['port'], msg)     
 
 def board(ip, port, sockobj, thiscommhandle, listencommhandle):
   print "Bord request"
- # msgheader = receiveMessage(sockobj)
+  msgheader = receiveMessage(sockobj)
 
   if mycontext['state'] == 'ELECTION':
-    print ("Message will be hanled by elction principles")
-    msgheader = sockobj.recv(1024)
+    print ("Message will be hanled by election principles")
+ #   msgheader = receiveMessage(sockobj) 
     if msgheader.startswith('ELECT'):
       handleELECTmessage(msgheader)
 
@@ -169,35 +145,11 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
       mycontext['state'] = 'RUNNING'
   elif mycontext['state'] == 'RUNNING': 
     print ("Program is currently running and messages will be hanled by running principles") 
-    # Sometimes the socket closes before sockobj.recv() finishes, but after msgheader is fully retrieved.
-    # As far as we can tell, this only happens on some systems.
-    # This try-except handles thoses cases
-    msgheader = receiveMessage(sockobj)
-  #  print ("New msgheader: " + msgheader)
-    # msgheader = ''
-    # try:
-    #   msgheader = sockobj.recv(1024) # Receive message,
-    # except Exception,e:
-    #   if msgheader:
-    #     print 'Exception caught: ', str(e)
-    #     print 'Message received but socket was closed prematurely'
-    #   else:
-    #     print 'Exception caught: ', str(e)
-    #     print 'Nothing received'
-    #     stopcomm(thiscommhandle)
-    #     return
-
-    
-    # The HTML code is divided in two parts, htmlpartone and hmtlparttwo.
-    # mycontext['htmlinputtable'] is then inserted between them
-
+#    msgheader = receiveMessage(sockobj)
 
     # React depending on message type: HTTP GET or POST, or some other type of communication.
     if msgheader.startswith( 'GET' ):
       sendHTTPOK(sockobj)
-#      htmlresponse = htmlpartone + mycontext['htmlinputtable'] + htmlparttwo
- #     sockobj.send("HTTP/1.1 200 OK\r\nContent-type: text/html\r\n" + \
-  #    "Content-length: %i\r\n\r\n%s" % (len(htmlresponse), htmlresponse))   
     elif msgheader.startswith( 'POST' ):
       if (getmyip()!=mycontext['leader']):
         # Vessel is not leader, forwards the post request to the leader.
@@ -209,11 +161,8 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
         #s.close
       else:
         # Vessel is leader, updates the input table with lock protected method below
-        addMessageToInputTable("<p>" + msgheader.split('comment=')[-1] + "</p>")
-      
-  #    htmlresponse = htmlpartone + mycontext['htmlinputtable'] + htmlparttwo
-  #    sockobj.send("HTTP/1.1 200 OK\r\nContent-type: text/html\r\n" + \
-  #    "Content-length: %i\r\n\r\n%s" % (len(htmlresponse), htmlresponse))
+        addMessageToInputTable("<p>" + msgheader.split('comment=')[-1] + "</p>")      
+  
       sendHTTPOK(sockobj)
 
   	
