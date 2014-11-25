@@ -5,7 +5,7 @@ def addMessageToInputTable(msg):
   mycontext['inputTableLock'].release()
 
 def receiveMessage(sockobj):
-  print("Start recieving")
+#  print("Start recieving")
   msgheader = ''
   timeout = 2
   nextpart = "placeholder"
@@ -22,7 +22,7 @@ def receiveMessage(sockobj):
   #     return
     try:
       nextpart = sockobj.recv(1024)
-      print (str(i) + "   " +nextpart)
+   #   print (str(i) + "   " +nextpart)
       i += 1
       msgheader = msgheader + nextpart
     #  nextpart = ""
@@ -37,7 +37,7 @@ def receiveMessage(sockobj):
   #     return msgheader
   #   print "Nextpart: " + nextpart
   # print 'msgheader = ' + msgheader
-  print ("Stopped recieving and returned: " + msgheader)
+ # print ("Stopped recieving and returned: " + msgheader)
   return msgheader
 
 
@@ -234,16 +234,23 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
     # Message sent from POST to update the mycontext['htmlinputtable']
     # (is not sent to local node)
     elif msgheader.startswith( 'UPT' ):
+      print ("UPT-meddelande med innehåll\n" + msgheader + "\n")
+      print ("Current version: " + str(mycontext['version']) + "\nMessage version: " + msgheader[3:].split(":")[-1])
+
       if (getmyip()==mycontext['leader']):
+  #      print ("\n\n\nAdding msgheader: \n\n\n" + msgheader[3:])
         addMessageToInputTable(msgheader[3:])
       else:
         # Local modification in non-leader vessel, only place, don't need to be protected
         # Check if newer version than current
-        version = msgheader[3:].split(":")[-1]
-        if(mycontext['version'] < version):
+        version = msgheader[3:].split(":")[-1] ## MOST FIX, MUTAL ECXLUCION
+        if(int(mycontext['version']) < version):
+  #        print msgheader
           msg = msgheader[3:].split(":")[0]
+   #       print ("\n\n\nAdding to board: " + msg)
           mycontext['htmlinputtable'] = msg
           mycontext['version'] = version
+          print ("UPDATED BOARD")
 
     stopcomm(thiscommhandle)
 
