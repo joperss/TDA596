@@ -1,12 +1,4 @@
-﻿Current solution does not support messages that are bigger than 1024.
-
-
-When a vessel has sent its conf-message it dosen't not bother to pass forward other vessels
+﻿Comments on Leader election implementation:
+When a vessel has sent its conf-message it dosen't bother to pass forward other vessels
 conf and elect message. With the assumption that all connection are reliable, we feel that this 
-is the most reasonable way to handle it. Other vessels will still receive our conf message.
-
-Fråga om man ska använda locks
-Lägg till random number på webbsidan
-Kolla om det räcker att f5:a på  två datorer
-lös randomnummer
-Nåt om att Emils string ska fixas
+is the most reasonable way to handle it. Other vessels will still receive our conf message and pick that leader.
