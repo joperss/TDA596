@@ -74,7 +74,6 @@ def receiveMessage(sockobj):
       nextpart = ""
   return msgheader
 
-
 def sendMessage(ip, port, msg, numberOfTries=1000, tryNumber=0):
   try:
     mycontext['socketLock'].acquire()
@@ -93,6 +92,7 @@ def sendMessage(ip, port, msg, numberOfTries=1000, tryNumber=0):
       sendMessage(ip, port, msg, numberOfTries, tryNumber+1)
     else:
       raise e
+
 def leaderBroadcast(newInput):
   mycontext['version'] = int(mycontext['version']) + 1
   for ipn in mycontext['vessels']:
@@ -118,10 +118,14 @@ def handleELECTmessage(msgheader):
       print vesselList
       for n in vesselList:
         if index % 2 != 0:
-          # BOGUS: bad if n == max
           if n > max:
             max = n
             leaderIndex = index-1
+          # If a vessel has the same random number as the current leader candidate, 
+          # elect the one with the greatest IP address value
+          elif n == max and vesselList[index - 1] > vesselList[leaderIndex]:
+            leaderIndex = index - 1
+
         index += 1
 
       mycontext['leader'] =  vesselList[leaderIndex]
@@ -142,16 +146,13 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
   if mycontext['state'] == 'ELECTION':
     if msgheader.startswith('ELECT'):
       handleELECTmessage(msgheader)
-
     elif msgheader.startswith('CONFIRM'):
       mycontext['leader'] = msgheader.split(':')[-1]
       mycontext['htmlinputtable'] = "<p>" + mycontext['leader'] + "</p>"
-
-
       msg = msgheader
       sendMessage(mycontext['nextvessel'], mycontext['port'], msg)
-      print("Sent CONF message to neigbohr")
       mycontext['state'] = 'RUNNING'
+
   elif mycontext['state'] == 'RUNNING': 
     # React depending on message type: HTTP GET or POST, or some other type of communication.
     if msgheader.startswith( 'GET' ):
@@ -168,12 +169,8 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
       sendHTTPOK(sockobj)
 
   	
-    # Message sent from POST to update the mycontext['htmlinputtable']
-    # (is not sent to local node)
+    # UPT-messages handles the updating of mycontext['htmlinputtable']
     elif msgheader.startswith( 'UPT' ):
-      print ("UPT-meddelande med innehåll\n" + msgheader + "\n")
-      print ("Current version: " + str(mycontext['version']) + "\nMessage version: " + msgheader[3:].split(":")[-1])
-
       if (getmyip()==mycontext['leader']):
         # Leader, modify mycontext board
         addMessageToInputTable(msgheader[3:])
