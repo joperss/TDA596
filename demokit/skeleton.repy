@@ -1,17 +1,19 @@
+# Used by the leader to add messages to it's content table
 def addMessageToInputTable(msg):
   mycontext['inputTableLock'].acquire()
   mycontext['htmlinputtable'] = mycontext['htmlinputtable'] + "<p>" + msg + "</p>"
   leaderBroadcast("<p>" + msg + "</p>")
   mycontext['inputTableLock'].release()
 
+# Used by non-leaders to update the content table, with version handling
 def upDateLocalBoard(msgheader):
-  version = int(msgheader[3:].split(":")[-1]) ## MOST FIX, MUTAL ECXLUCION
+  version = int(msgheader[3:].split(":")[-1])
   msg = msgheader[3:].split(":")[0]
-  mycontext['upDateLocalBoardLock'].acquire()
+  mycontext['inputTableLock'].acquire()
   if (int(mycontext['maxVersion']) < int(version)):
       mycontext['maxVersion'] = version
 
-  if(mycontext['version'] == int(version)):
+  if(mycontext['version'] + 1 == int(version)):
     mycontext['htmlinputtable'] += msg
     mycontext['version'] = version
     i = version
@@ -29,8 +31,9 @@ def upDateLocalBoard(msgheader):
     mycontext['savedMessages'][version] = msg
     
 
-  mycontext['upDateLocalBoardLock'].release()
+  mycontext['inputTableLock'].release()
 
+# Sends a HHTP OK when receiving a webbrowser request
 def sendHTTPOK(sockobj):
   # The HTML code is divided in two parts, htmlpartone and hmtlparttwo.
   # mycontext['htmlinputtable'] is then inserted between them
@@ -74,19 +77,17 @@ def receiveMessage(sockobj):
       nextpart = ""
   return msgheader
 
+
 def sendMessage(ip, port, msg, numberOfTries=1000, tryNumber=0):
   try:
     mycontext['socketLock'].acquire()
     s = openconn(ip, port)
     s.send(msg)
-    print "Message sent"
     s.close()
     mycontext['socketLock'].release()
   except Exception, e:
     print 'Exception caught: ', str(e)
-    print "Neighbour not ready, will try again"
     if(tryNumber < numberOfTries):
-      print "Socket wasn't ready, will try again"
 
       mycontext['socketLock'].release()
       sendMessage(ip, port, msg, numberOfTries, tryNumber+1)
@@ -102,12 +103,11 @@ def leaderBroadcast(newInput):
 
 # Sets leader to '' and sends the vessel's first message in the leader election
 def startLeaderElection():
-  mycontext['leader'] = ''
-  print "Opening connection to ip " + mycontext['nextvessel'] + " on port " + str(mycontext['port'])
-  
+  mycontext['leader'] = ''  
   msg = "ELECT:" + getmyip() + ":" + str(mycontext['electnum'])
   sendMessage(mycontext['nextvessel'], mycontext['port'], msg) 
 
+# Deals with incoming ELECT messages, either by electing a leader and sending a CONFIRM message, or by adding the vessels IP and port to the ELECT message.
 def handleELECTmessage(msgheader):
     if msgheader.split(':')[1] == getmyip():
       msgheader = msgheader[6:]
@@ -115,7 +115,6 @@ def handleELECTmessage(msgheader):
       index = 0
       max = 0
       leaderIndex = 0
-      print vesselList
       for n in vesselList:
         if index % 2 != 0:
           if n > max:
@@ -129,9 +128,9 @@ def handleELECTmessage(msgheader):
         index += 1
 
       mycontext['leader'] =  vesselList[leaderIndex]
-      mycontext['htmlinputtable'] = "<p>" + mycontext['leader'] + " has value " + str(max) + "</p>"
+      mycontext['htmlinputtable'] = "<p>The Leader is " + mycontext['leader'] + " and has value " + str(max) + "</p>"
       # Send CONF
-      msg = "CONFIRM:" + mycontext['leader']
+      msg = "CONFIRM:" + mycontext['leader'] + ':' + str(max)
       sendMessage(mycontext['nextvessel'], mycontext['port'], msg)
       mycontext['state'] = 'RUNNING'
     else:
@@ -139,16 +138,16 @@ def handleELECTmessage(msgheader):
       msg = msgheader + ":" + getmyip() + ":" +  str(mycontext['electnum'])
       sendMessage(mycontext['nextvessel'], mycontext['port'], msg)     
 
+# Handles incoming communication
 def board(ip, port, sockobj, thiscommhandle, listencommhandle):
-  print "Bord request"
   msgheader = receiveMessage(sockobj)
 
   if mycontext['state'] == 'ELECTION':
     if msgheader.startswith('ELECT'):
       handleELECTmessage(msgheader)
     elif msgheader.startswith('CONFIRM'):
-      mycontext['leader'] = msgheader.split(':')[-1]
-      mycontext['htmlinputtable'] = "<p>" + mycontext['leader'] + "</p>"
+      mycontext['leader'] = msgheader.split(':')[-2]
+      mycontext['htmlinputtable'] = "<p>The Leader is " + mycontext['leader'] + " and has value " + msgheader.split(':')[-1] + "</p>"
       msg = msgheader
       sendMessage(mycontext['nextvessel'], mycontext['port'], msg)
       mycontext['state'] = 'RUNNING'
@@ -186,8 +185,7 @@ if callfunc == 'initialize':
   mycontext['vessels'] = [] # Dictionary for all vessels (not scalable solution)
   mycontext['htmlinputtable'] = "" # The blackboard
   mycontext['socketLock'] = getlock()
-  mycontext['inputTableLock'] = getlock() # Used by leader
-  mycontext['upDateLocalBoardLock'] = getlock() # Used by non-leaders
+  mycontext['inputTableLock'] = getlock() # Protects the input table
   mycontext['version'] = 1
   mycontext['maxVersion'] = 1
   mycontext['savedMessages'] = {} 
