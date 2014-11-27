@@ -1,19 +1,40 @@
 def addMessageToInputTable(msg):
   mycontext['inputTableLock'].acquire()
   mycontext['htmlinputtable'] = mycontext['htmlinputtable'] + "<p>" + msg + "</p>"
-  leaderBroadcast()
+  leaderBroadcast("<p>" + msg + "</p>")
   mycontext['inputTableLock'].release()
 
 def upDateLocalBoard(msgheader):
-  version = msgheader[3:].split(":")[-1] ## MOST FIX, MUTAL ECXLUCION
+  version = int(msgheader[3:].split(":")[-1]) ## MOST FIX, MUTAL ECXLUCION
+  msg = msgheader[3:].split(":")[0]
   mycontext['upDateLocalBoardLock'].acquire()
-  if(int(mycontext['version']) < version):
+  if (int(mycontext['maxVersion']) < int(version)):
+      mycontext['maxVersion'] = version
+
+  comp = (int(mycontext['version'])  + 1)
+  if(int(comp) == int(version)):
 #        print msgheader
-    msg = msgheader[3:].split(":")[0]
+    print "Updating table"
 #       print ("\n\n\nAdding to board: " + msg)
-    mycontext['htmlinputtable'] = msg
+    mycontext['htmlinputtable'] += msg
     mycontext['version'] = version
-    print ("UPDATED BOARD")
+
+    i = version
+    while (i<mycontext['maxVersion']):
+      i+=1
+      result = mycontext['savedMessages'][i]
+      if result == null:
+        return
+      else:
+        mycontext['htmlinputtable'] += result
+        mycontext['version'] = i
+
+#    print ("UPDATED BOARD")
+  elif (int(mycontext['version']) + 1 < version):
+    print "woo!"
+    mycontext['savedMessages'][version] = msg
+    
+
   mycontext['upDateLocalBoardLock'].release()
 
 def sendHTTPOK(sockobj):
@@ -69,7 +90,7 @@ def sendMessage(ip, port, msg, numberOfTries=1000, tryNumber=0):
     s = openconn(ip, port)
     s.send(msg)
     print "Message sent"
-    s.close
+    s.close()
     mycontext['socketLock'].release()
   except Exception, e:
     print 'Exception caught: ', str(e)
@@ -81,11 +102,11 @@ def sendMessage(ip, port, msg, numberOfTries=1000, tryNumber=0):
       sendMessage(ip, port, msg, numberOfTries, tryNumber+1)
     else:
       raise e
-def leaderBroadcast():
+def leaderBroadcast(newInput):
   mycontext['version'] = str(int(mycontext['version']) + 1)
   for ipn in mycontext['vessels']:
     if(ipn != mycontext['leader']):
-      msg ="UPT" + mycontext['htmlinputtable'] + ":" + mycontext['version']
+      msg ="UPT" + newInput + ":" + mycontext['version']
       sendMessage(ipn, mycontext['port'], msg)
 
 # Sets leader to '' and sends the vessel's first message in the leader election
@@ -187,9 +208,11 @@ if callfunc == 'initialize':
   mycontext['vessels'] = [] # Dictionary for all vessels (not scalable solution)
   mycontext['htmlinputtable'] = "" # The blackboard
   mycontext['socketLock'] = getlock()
-  mycontext['inputTableLock'] = getlock()
-  mycontext['upDateLocalBoardLock'] = getlock()
+  mycontext['inputTableLock'] = getlock() # Used by leader
+  mycontext['upDateLocalBoardLock'] = getlock() # Used by non-leaders
   mycontext['version'] = 1
+  mycontext['maxVersion'] = 1
+  mycontext['savedMessages'] = {} 
 
 
   if len(callargs) > 2:
@@ -218,6 +241,8 @@ if callfunc == 'initialize':
   mycontext['nextvessel'] = mycontext['vessels'][index % length]
 
   mycontext['electnum'] = int(randomfloat()*1000)
+
+
   listencommhandle = waitforconn(ip,port,board)
  # sleep(2)
   startLeaderElection()
