@@ -127,10 +127,13 @@ def handleELECTmessage(msgheader):
       print vesselList
       for n in vesselList:
         if index % 2 != 0:
-          # BOGUS: bad if n == max
           if n > max:
             max = n
-            leaderIndex = index-1
+            leaderIndex = index - 1
+          # If a vessel has the same random number as the current leader candidate, 
+          # elect the one with the greatest IP address value
+          elif n == max and vesselList[index - 1] > vesselList[leaderIndex]:
+            leaderIndex = index - 1
         index += 1
 
       mycontext['leader'] =  vesselList[leaderIndex]
@@ -205,7 +208,7 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
 	
 if callfunc == 'initialize':
   mycontext['state'] = 'ELECTION'
-  mycontext['vessels'] = [] # Dictionary for all vessels (not scalable solution)
+  mycontext['vessels'] = [] # List for all vessels (not scalable solution)
   mycontext['htmlinputtable'] = "" # The blackboard
   mycontext['socketLock'] = getlock()
   mycontext['inputTableLock'] = getlock() # Used by leader
