@@ -11,15 +11,11 @@ def upDateLocalBoard(msgheader):
   if (int(mycontext['maxVersion']) < int(version)):
       mycontext['maxVersion'] = version
 
-  comp = (int(mycontext['version'])  + 1)
-  if(int(comp) == int(version)):
-#        print msgheader
-    print "Updating table"
-#       print ("\n\n\nAdding to board: " + msg)
+  if(mycontext['version'] == int(version)):
     mycontext['htmlinputtable'] += msg
     mycontext['version'] = version
-
     i = version
+
     while (i<mycontext['maxVersion']):
       i+=1
       result = mycontext['savedMessages'][i]
@@ -29,9 +25,7 @@ def upDateLocalBoard(msgheader):
         mycontext['htmlinputtable'] += result
         mycontext['version'] = i
 
-#    print ("UPDATED BOARD")
   elif (int(mycontext['version']) + 1 < version):
-    print "woo!"
     mycontext['savedMessages'][version] = msg
     
 
@@ -63,12 +57,10 @@ def sendHTTPOK(sockobj):
 
 
 def receiveMessage(sockobj):
-#  print("Start recieving")
-  msgheader = ''
+  msgheader = ""
   timeout = 2
-  nextpart = "placeholder"
+  nextpart = ""
   first = 1
-  i = 1
 
   while first or len(nextpart) == 1024:
     if first:
@@ -76,7 +68,6 @@ def receiveMessage(sockobj):
 
     try:
       nextpart = sockobj.recv(1024)
-      i += 1
       msgheader = msgheader + nextpart
     except Exception, e:
       print 'Exception caught: ', str(e), ', in receiveMessage(). Will try again'
@@ -103,10 +94,10 @@ def sendMessage(ip, port, msg, numberOfTries=1000, tryNumber=0):
     else:
       raise e
 def leaderBroadcast(newInput):
-  mycontext['version'] = str(int(mycontext['version']) + 1)
+  mycontext['version'] = int(mycontext['version']) + 1
   for ipn in mycontext['vessels']:
     if(ipn != mycontext['leader']):
-      msg ="UPT" + newInput + ":" + mycontext['version']
+      msg ="UPT" + newInput + ":" + str(mycontext['version'])
       sendMessage(ipn, mycontext['port'], msg)
 
 # Sets leader to '' and sends the vessel's first message in the leader election
@@ -127,19 +118,15 @@ def handleELECTmessage(msgheader):
       print vesselList
       for n in vesselList:
         if index % 2 != 0:
+          # BOGUS: bad if n == max
           if n > max:
             max = n
-            leaderIndex = index - 1
-          # If a vessel has the same random number as the current leader candidate, 
-          # elect the one with the greatest IP address value
-          elif n == max and vesselList[index - 1] > vesselList[leaderIndex]:
-            leaderIndex = index - 1
+            leaderIndex = index-1
         index += 1
 
       mycontext['leader'] =  vesselList[leaderIndex]
       mycontext['htmlinputtable'] = "<p>" + mycontext['leader'] + " has value " + str(max) + "</p>"
       # Send CONF
-      print "Sending conf message, starts running phase"
       msg = "CONFIRM:" + mycontext['leader']
       sendMessage(mycontext['nextvessel'], mycontext['port'], msg)
       mycontext['state'] = 'RUNNING'
@@ -153,8 +140,6 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
   msgheader = receiveMessage(sockobj)
 
   if mycontext['state'] == 'ELECTION':
-    print ("Message will be hanled by election principles")
- #   msgheader = receiveMessage(sockobj) 
     if msgheader.startswith('ELECT'):
       handleELECTmessage(msgheader)
 
@@ -168,9 +153,6 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
       print("Sent CONF message to neigbohr")
       mycontext['state'] = 'RUNNING'
   elif mycontext['state'] == 'RUNNING': 
-    print ("Program is currently running and messages will be hanled by running principles") 
-#    msgheader = receiveMessage(sockobj)
-
     # React depending on message type: HTTP GET or POST, or some other type of communication.
     if msgheader.startswith( 'GET' ):
       sendHTTPOK(sockobj)
@@ -179,10 +161,6 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
         # Vessel is not leader, forwards the post request to the leader.
         msg = "UPT" + "<p>" + msgheader.split('comment=')[-1] + "</p>"
         sendMessage(mycontext['leader'], mycontext['port'], msg)
-
-        #s = openconn(mycontext['leader'], mycontext['port']) 
-        #s.send("UPT" + "<p>" + msgheader.split('comment=')[-1] + "</p>")
-        #s.close
       else:
         # Vessel is leader, updates the input table with lock protected method below
         addMessageToInputTable("<p>" + msgheader.split('comment=')[-1] + "</p>")      
@@ -208,7 +186,7 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
 	
 if callfunc == 'initialize':
   mycontext['state'] = 'ELECTION'
-  mycontext['vessels'] = [] # List for all vessels (not scalable solution)
+  mycontext['vessels'] = [] # Dictionary for all vessels (not scalable solution)
   mycontext['htmlinputtable'] = "" # The blackboard
   mycontext['socketLock'] = getlock()
   mycontext['inputTableLock'] = getlock() # Used by leader
