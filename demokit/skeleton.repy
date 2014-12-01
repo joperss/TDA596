@@ -2,7 +2,7 @@
 def addMessageToInputTable(msg):
   mycontext['inputTableLock'].acquire()
   mycontext['htmlinputtable'] = mycontext['htmlinputtable'] + "<p>" + msg + "</p>"
-  leaderBroadcast("<p>" + msg + "</p>")
+  broadcast("<p>" + msg + "</p>")
   mycontext['inputTableLock'].release()
 
 # Used by non-leaders to update the content table, with version handling
@@ -94,94 +94,43 @@ def sendMessage(ip, port, msg, numberOfTries=1000, tryNumber=0):
     else:
       raise e
 
-def leaderBroadcast(newInput):
+def broadcast(newInput):
   mycontext['version'] = int(mycontext['version']) + 1
   for ipn in mycontext['vessels']:
-    if(ipn != mycontext['leader']):
+    if(ipn != getmyip()):
       msg ="UPT" + newInput + ":" + str(mycontext['version'])
       sendMessage(ipn, mycontext['port'], msg)
-
-# Sets leader to '' and sends the vessel's first message in the leader election
-def startLeaderElection():
-  mycontext['leader'] = ''  
-  msg = "ELECT:" + getmyip() + ":" + str(mycontext['electnum'])
-  sendMessage(mycontext['nextvessel'], mycontext['port'], msg) 
-
-# Deals with incoming ELECT messages, either by electing a leader and sending a CONFIRM message, or by adding the vessels IP and port to the ELECT message.
-def handleELECTmessage(msgheader):
-    if msgheader.split(':')[1] == getmyip():
-      msgheader = msgheader[6:]
-      vesselList = msgheader.split(':')
-      index = 0
-      max = 0
-      leaderIndex = 0
-      for n in vesselList:
-        if index % 2 != 0:
-          if n > max:
-            max = n
-            leaderIndex = index-1
-          # If a vessel has the same random number as the current leader candidate, 
-          # elect the one with the greatest IP address value
-          elif n == max and vesselList[index - 1] > vesselList[leaderIndex]:
-            leaderIndex = index - 1
-
-        index += 1
-
-      mycontext['leader'] =  vesselList[leaderIndex]
-      mycontext['htmlinputtable'] = "<p>The Leader is " + mycontext['leader'] + " and has value " + str(max) + "</p>"
-      # Send CONF
-      msg = "CONFIRM:" + mycontext['leader'] + ':' + str(max)
-      sendMessage(mycontext['nextvessel'], mycontext['port'], msg)
-      mycontext['state'] = 'RUNNING'
-    else:
-   # Add values to message
-      msg = msgheader + ":" + getmyip() + ":" +  str(mycontext['electnum'])
-      sendMessage(mycontext['nextvessel'], mycontext['port'], msg)     
 
 # Handles incoming communication
 def board(ip, port, sockobj, thiscommhandle, listencommhandle):
   msgheader = receiveMessage(sockobj)
 
-  if mycontext['state'] == 'ELECTION':
-    if msgheader.startswith('ELECT'):
-      handleELECTmessage(msgheader)
-    elif msgheader.startswith('CONFIRM'):
-      mycontext['leader'] = msgheader.split(':')[-2]
-      mycontext['htmlinputtable'] = "<p>The Leader is " + mycontext['leader'] + " and has value " + msgheader.split(':')[-1] + "</p>"
-      msg = msgheader
-      sendMessage(mycontext['nextvessel'], mycontext['port'], msg)
-      mycontext['state'] = 'RUNNING'
-
-  elif mycontext['state'] == 'RUNNING': 
+  if mycontext['state'] == 'RUNNING': 
     # React depending on message type: HTTP GET or POST, or some other type of communication.
     if msgheader.startswith( 'GET' ):
       sendHTTPOK(sockobj)
     elif msgheader.startswith( 'POST' ):
-      if (getmyip()!=mycontext['leader']):
-        # Vessel is not leader, forwards the post request to the leader.
-        msg = "UPT" + "<p>" + msgheader.split('comment=')[-1] + "</p>"
-        sendMessage(mycontext['leader'], mycontext['port'], msg)
-      else:
-        # Vessel is leader, updates the input table with lock protected method below
-        addMessageToInputTable("<p>" + msgheader.split('comment=')[-1] + "</p>")      
+      # Vessel is not leader, forwards the post request to the leader.
+      msg = "UPT" + "<p>" + msgheader.split('comment=')[-1] + "</p>"
+      addMessageToInputTable(msg)
   
       sendHTTPOK(sockobj)
 
   	
     # UPT-messages handles the updating of mycontext['htmlinputtable']
     elif msgheader.startswith( 'UPT' ):
-      if (getmyip()==mycontext['leader']):
+#      if (getmyip()==mycontext['leader']):
         # Leader, modify mycontext board
-        addMessageToInputTable(msgheader[3:])
-      else:
+ #     addMessageToInputTable(msgheader[3:])
+ #     else:
         # Checks if newer version than current, then replace local board view        
-        upDateLocalBoard(msgheader)
+      upDateLocalBoard(msgheader)
 
     stopcomm(thiscommhandle)
 
 	
 if callfunc == 'initialize':
-  mycontext['state'] = 'ELECTION'
+  mycontext['state'] = 'RUNNING'
   mycontext['vessels'] = [] # Dictionary for all vessels (not scalable solution)
   mycontext['htmlinputtable'] = "" # The blackboard
   mycontext['socketLock'] = getlock()
@@ -220,6 +169,3 @@ if callfunc == 'initialize':
 
 
   listencommhandle = waitforconn(ip,port,board)
- # sleep(2)
-  startLeaderElection()
-
