@@ -1,34 +1,43 @@
 # Used by the leader to add messages to it's content table
-def addMessageToInputTable(msg):
+def addMessageToInputTable(ip, msg):
   mycontext['inputTableLock'].acquire()
-  mycontext['htmlinputtable'] = mycontext['htmlinputtable'] + "<p>" + msg + "</p>"
-  broadcast("<p>" + msg + "</p>")
+
+  mycontext['boardList'].append(((mycontext['seqNummer'],ip), "<p>" + msg + str(mycontext['seqNummer']) + "</p>"))    
+  bmsg = "UPT"+ getmyip() + ":" + str(mycontext['seqNummer']) + ":<p>" + msg + str(mycontext['seqNummer']) +  "</p>"
+  mycontext['seqNummer'] += 1
+
+#  mycontext['htmlinputtable'] = mycontext['htmlinputtable'] + "<p>" + msg + "</p>"
+  broadcast("<p>" + bmsg + "</p>")
   mycontext['inputTableLock'].release()
 
-# Used by non-leaders to update the content table, with version handling
+# Used by non-leaders to update the content table, with seqNummer handling
 def upDateLocalBoard(msgheader):
-  version = int(msgheader[3:].split(":")[-1])
-  msg = msgheader[3:].split(":")[0]
+  seqNummer = int(msgheader[3:].split(":")[1])
+  ip = msgheader[3:].split(":")[0]
+  msg = msgheader[3:].split(":")[2]
   mycontext['inputTableLock'].acquire()
-  if (int(mycontext['maxVersion']) < int(version)):
-      mycontext['maxVersion'] = version
 
-  if(mycontext['version'] + 1 == int(version)):
-    mycontext['htmlinputtable'] += msg
-    mycontext['version'] = version
-    i = version
+  if seqNummer >= mycontext['seqNummer']:
+    mycontext['boardList'].append(((mycontext['seqNummer'],ip), msg ))
+    mycontext['seqNummer'] = seqNummer + 1
+  else:
+    id = 0
+    print "lenght of boardList"
+    print len(mycontext['boardList'])
+    print "seqNummer" + str(seqNummer)
+    while  len(mycontext['boardList']) > id and int(mycontext['boardList'][id][0][0]) <= seqNummer:
+      tup = mycontext['boardList'][id]
+      print tup
+ #     print "tup: "+ str(tup[0][0]) + " seqNummer: " + str(seqNummer)
+      if int(tup[0][0]) == seqNummer:
+        if tup[0][1] > ip:
+          mycontext['boardList'].insert(id, ((seqNummer,ip),msg))
+          return
+      id += 1
+    mycontext['boardList'].insert(id-1, ((seqNummer,ip),msg))
 
-    while (i<mycontext['maxVersion']):
-      i+=1
-      result = mycontext['savedMessages'][i]
-      if result == null:
-        return
-      else:
-        mycontext['htmlinputtable'] += result
-        mycontext['version'] = i
+#    mycontext['boardList'].append(((seqNummer,ip),msg))
 
-  elif (int(mycontext['version']) + 1 < version):
-    mycontext['savedMessages'][version] = msg
     
 
   mycontext['inputTableLock'].release()
@@ -54,7 +63,11 @@ def sendHTTPOK(sockobj):
     </form>
     </body></html>"""
 
-  htmlresponse = htmlpartone + mycontext['htmlinputtable'] + htmlparttwo
+  board = ""
+  for tup in mycontext['boardList']:
+    board += tup[1]
+
+  htmlresponse = htmlpartone + board + htmlparttwo
   sockobj.send("HTTP/1.1 200 OK\r\nContent-type: text/html\r\n" + \
   "Content-length: %i\r\n\r\n%s" % (len(htmlresponse), htmlresponse))
 
@@ -95,10 +108,9 @@ def sendMessage(ip, port, msg, numberOfTries=1000, tryNumber=0):
       raise e
 
 def broadcast(newInput):
-  mycontext['version'] = int(mycontext['version']) + 1
   for ipn in mycontext['vessels']:
     if(ipn != getmyip()):
-      msg ="UPT" + newInput + ":" + str(mycontext['version'])
+      msg ="UPT" + newInput + ":" + str(mycontext['seqNummer'])
       sendMessage(ipn, mycontext['port'], msg)
 
 # Handles incoming communication
@@ -111,8 +123,7 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
       sendHTTPOK(sockobj)
     elif msgheader.startswith( 'POST' ):
       # Vessel is not leader, forwards the post request to the leader.
-      msg = "UPT" + "<p>" + msgheader.split('comment=')[-1] + "</p>"
-      addMessageToInputTable(msg)
+      addMessageToInputTable(getmyip(), msgheader.split('comment=')[-1])
   
       sendHTTPOK(sockobj)
 
@@ -123,7 +134,7 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
         # Leader, modify mycontext board
  #     addMessageToInputTable(msgheader[3:])
  #     else:
-        # Checks if newer version than current, then replace local board view        
+        # Checks if newer seqNummer than current, then replace local board view        
       upDateLocalBoard(msgheader)
 
     stopcomm(thiscommhandle)
@@ -135,9 +146,11 @@ if callfunc == 'initialize':
   mycontext['htmlinputtable'] = "" # The blackboard
   mycontext['socketLock'] = getlock()
   mycontext['inputTableLock'] = getlock() # Protects the input table
-  mycontext['version'] = 1
+  mycontext['seqNummer'] = 1
   mycontext['maxVersion'] = 1
   mycontext['savedMessages'] = {} 
+
+  mycontext['boardList'] = []
 
 
   if len(callargs) > 2:
