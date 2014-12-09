@@ -2,61 +2,42 @@
 def addMessageToInputTable(ip, msg):
   mycontext['inputTableLock'].acquire()
 
-  mycontext['boardList'].append(((mycontext['seqNummer'],ip), "<p>" + msg + str(mycontext['seqNummer']) + "</p>"))    
-  bmsg = getmyip() + ":" + str(mycontext['seqNummer']) + ":<p>" + msg + str(mycontext['seqNummer']) +  "</p>"
+  mycontext['boardList'].append(((mycontext['seqNummer'],ip), msg + str(mycontext['seqNummer'])))    
+  bmsg = getmyip() + ":" + str(mycontext['seqNummer']) + ":" + msg + str(mycontext['seqNummer']) 
   mycontext['seqNummer'] += 1
 
   mycontext['inputTableLock'].release()
-  broadcast("<p>" + bmsg + "</p>")
+  broadcast(bmsg)
 
 # Updating local board after recieving a UPT-message, with seqNummer handling
 def upDateLocalBoard(msgheader):
   seqNummer = int(msgheader[3:].split(":")[1])
   ip = msgheader[3:].split(":")[0]
   msg = msgheader[3:].split(":")[2]
- # print "New input" + msg
   mycontext['inputTableLock'].acquire()
 
   if seqNummer >= mycontext['seqNummer']:
-    print "'D' appended." + "seqNummer: " + str(seqNummer) + " ip: " + ip
-
     mycontext['boardList'].append(((seqNummer,ip), msg ))
     mycontext['seqNummer'] = seqNummer + 1
-#    print "Appended msg to boardlist"
+
   else:
+    # Iterates over the board. Checks if the seqNummer is the same as the list items.
+    # If it is, it will compare their IPs and insert it on the right position.
+    # If it reaches at list item that has a bigger seqNummer it will insert on that position.
     id = 0
-   # print "lenght of boardList"
-   # print len(mycontext['boardList'])
-   # print "seqNummer: " + str(seqNummer) + " ip: " + ip
     while  len(mycontext['boardList']) > id and int(mycontext['boardList'][id][0][0]) <= seqNummer:
       tup = mycontext['boardList'][id]
- #     print tup
- #     print "tup: "+ str(tup[0][0]) + " seqNummer: " + str(seqNummer)
-       
       listItemSeqNumber = int(tup[0][0])
 
       if listItemSeqNumber == int(seqNummer):
-        print tup[0][1] + " i compared with " + ip
-        print str(listItemSeqNumber) + " was compared with " + str(seqNummer)
         listItemIP = tup[0][1]
 
         if listItemIP > ip:
-          print "'A' inserted at " + str(id) + ". seqNummer: " + str(seqNummer) + " ip: " + ip
           mycontext['boardList'].insert(id, ((seqNummer,ip),msg))
           mycontext['inputTableLock'].release()
           return
-      elif listItemSeqNumber > int(seqNummer) :
-          # Should be unreachable
-        print "'C'Inserted at " + str(id) + ". seqNummer: " + str(seqNummer) + " ip: " + ip
-        mycontext['boardList'].insert(id, ((seqNummer,ip),msg))
-
-
       id += 1
-    
-    print "'B'Inserted at " + str(id) + ". seqNummer: " + str(seqNummer) + " ip: " + ip
     mycontext['boardList'].insert(id, ((seqNummer,ip),msg))
-
-#    mycontext['boardList'].append(((seqNummer,ip),msg))
 
     
 
@@ -85,14 +66,12 @@ def sendHTTPOK(sockobj):
 
   board = ""
   for tup in mycontext['boardList']:
-    board += tup[1]
+    board += "<p>" + tup[1] + "</p>" 
 
 
   htmlresponse = htmlpartone + board + htmlparttwo
   sockobj.send("HTTP/1.1 200 OK\r\nContent-type: text/html\r\n" + \
   "Content-length: %i\r\n\r\n%s" % (len(htmlresponse), htmlresponse))
-
- # print "Board updated " + str(getruntime())
 
 
 def receiveMessage(sockobj):
@@ -145,20 +124,12 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
       sendHTTPOK(sockobj)
     elif msgheader.startswith( 'POST' ):
       # Vessel is not leader, forwards the post request to the leader.
-  #    print "A post at " + str(getruntime())
       addMessageToInputTable(getmyip(), msgheader.split('comment=')[-1])
-  
       sendHTTPOK(sockobj)
 
   	
     # UPT-messages handles the updating of mycontext['htmlinputtable']
     elif msgheader.startswith( 'UPT' ):
- #     print "Updating the board at " + str(getruntime())
-#      if (getmyip()==mycontext['leader']):
-        # Leader, modify mycontext board
- #     addMessageToInputTable(msgheader[3:])
- #     else:
-        # Checks if newer seqNummer than current, then replace local board view 
       upDateLocalBoard(msgheader[3:])
 
     stopcomm(thiscommhandle)
