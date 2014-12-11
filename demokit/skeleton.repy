@@ -11,33 +11,34 @@ def addMessageToInputTable(ip, msg):
 
 # Updating local board after recieving a UPT-message from another vessel, with seqNumber handling
 def upDateLocalBoard(msgheader):
-  seqNumber = int(msgheader[3:].split(":")[1])
-  ip = msgheader[3:].split(":")[0]
-  msg = msgheader[3:].split(":")[2]
+#  seqNumber = int(msgheader[3:].split(":")[1])
+#  ip = msgheader[3:].split(":")[0]
+#  msg = msgheader[3:].split(":")[2]
   mycontext['inputTableLock'].acquire()
+  mycontext['boardList'].append(msgheader)
 
-  if seqNumber >= mycontext['seqNumber']:
-    mycontext['boardList'].append(((seqNumber,ip), msg ))
-    mycontext['seqNumber'] = seqNumber + 1
+#  if seqNumber >= mycontext['seqNumber']:
+#    mycontext['boardList'].append(((seqNumber,ip), msg ))
+#    mycontext['seqNumber'] = seqNumber + 1
 
-  else:
+#  else:
     # Iterates over the board. Checks if the seqNumber is the same as the list items.
     # If it is, it will compare their IPs and insert it on the right position.
     # If it reaches a list item that has a bigger seqNumber it will insert on that position.
-    id = 0
-    while  len(mycontext['boardList']) > id and int(mycontext['boardList'][id][0][0]) <= seqNumber:
-      tup = mycontext['boardList'][id]
-      listItemSeqNumber = int(tup[0][0])
+ #   id = 0
+ #   while  len(mycontext['boardList']) > id and int(mycontext['boardList'][id][0][0]) <= seqNumber:
+ #     tup = mycontext['boardList'][id]
+ #     listItemSeqNumber = int(tup[0][0])
 
-      if listItemSeqNumber == int(seqNumber):
-        listItemIP = tup[0][1]
+#      if listItemSeqNumber == int(seqNumber):
+#        listItemIP = tup[0][1]
 
-        if listItemIP > ip:
-          mycontext['boardList'].insert(id, ((seqNumber,ip),msg))
-          mycontext['inputTableLock'].release()
-          return
-      id += 1
-    mycontext['boardList'].insert(id, ((seqNumber,ip),msg))
+#        if listItemIP > ip:
+ #         mycontext['boardList'].insert(id, ((seqNumber,ip),msg))
+  #        mycontext['inputTableLock'].release()
+   #       return
+   #   id += 1
+  #  mycontext['boardList'].insert(id, ((seqNumber,ip),msg))
 
     
 
@@ -65,8 +66,8 @@ def sendHTTPOK(sockobj):
     </body></html>"""
 
   board = ""
-  for tup in mycontext['boardList']:
-    board += "<p>" + tup[1] + "</p>" 
+  for content in mycontext['boardList']:
+    board += "<p>" + content + "</p>" 
 
 
   htmlresponse = htmlpartone + board + htmlparttwo
@@ -108,11 +109,56 @@ def sendMessage(ip, port, msg, numberOfTries=1000, tryNumber=0):
     else:
       raise e
 
+def readQuorum():
+  # This is for performance and ME-protection for the inputtable
+  if mycontext['readLock'].acquire(blocking=0):
+    msg = 'CHECK'
+    for vessel in mycontext['R']:
+      sendMessage(vessel, mycontext['port'], msg)
+    # Lock and wait for the messages to arrive
+    mycontext['waitForAnswers'].acquire()
+
+    maxSeqNumber = mycontext['seqNumber']
+    ip = getmyip()
+
+    for tup in mycontext['readSeqAnswers']:
+      tempSeqNumber = tup[0]
+      tempIP = tup[1]
+
+      if tempSeqNumber > maxSeqNumber:
+        maxSeqNumber = tempSeqNumber
+        ip = tempIP
+
+    if ip != getmyip():
+      copyBoard(ip, mycontext['seqNumber'])
+    # do things
+
+    # unlock
+    mycontext['readSeqAnswers'] = []
+    mycontext['readLock'].release()
+
+def copyBoard(ip, seqNumber):
+  for content in mycontext['boardList'][seqNumber:]
+    msg ="UPT:" + content
+    sendMessage(ipn, mycontext['port'], msg)
+
+def sendSeqNr(ip):
+  msg = 'SEQ:' + str(mycontext['seqNumber']) + ':' + getmyip()
+  sendMessage(ip, mycontext['port'], msg)
+
+def receiveSeqNumberLogic(msgheader):
+  seqNumber = msgheader.split(':')[1]
+  ip = msgheader.split(':')[2]
+  mycontext['readSeqAnswers'].append((seqNumber,ip))
+
+  if len(mycontext['readSeqAnswers']) == len(mycontext['R']):
+    mycontext['waitForAnswers'].release()
+
+
 def broadcast(newInput):
-  for ipn in mycontext['vessels']:
-    if(ipn != getmyip()):
-      msg ="UPT" + newInput + ":" + str(mycontext['seqNumber'])
-      sendMessage(ipn, mycontext['port'], msg)
+  for ipn in mycontext['otherVessels']:
+    msg ="UPT" + newInput + ":" + str(mycontext['seqNumber'])
+    sendMessage(ipn, mycontext['port'], msg)
 
 # Handles incoming communication
 def board(ip, port, sockobj, thiscommhandle, listencommhandle):
@@ -121,6 +167,7 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
   if mycontext['state'] == 'RUNNING': 
     # React depending on message type: HTTP GET or POST, or some other type of communication.
     if msgheader.startswith ('GET' ):
+      readQuorum()
       sendHTTPOK(sockobj)
     elif msgheader.startswith( 'POST' ):
       addMessageToInputTable(getmyip(), msgheader.split('comment=')[-1])
@@ -129,20 +176,31 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
   	
     # UPT-messages handles the updating of mycontext['boardList']
     elif msgheader.startswith( 'UPT' ):
-      upDateLocalBoard(msgheader[3:])
+      upDateLocalBoard(msgheader[4:])
+    elif msgheader.startswith( 'CHECK' ):
+      sendSeqNumber(ip)
+    elif msgheader.startswith( 'SEQ' ):
+      receiveSeqNumberLogic(msgheader)
 
     stopcomm(thiscommhandle)
 
 	
 if callfunc == 'initialize':
   mycontext['state'] = 'RUNNING'
-  mycontext['vessels'] = [] # List of all vessels (not scalable solution)
+  mycontext['otherVessels'] = [] # List of all vessels (not scalable solution)
   mycontext['htmlinputtable'] = "" # The blackboard
   mycontext['socketLock'] = getlock()
   mycontext['inputTableLock'] = getlock() # Protects the input table
+  mycontext['waitForAnswers'] =getlock()
+  mycontext['waitForAnswers'].acquire()
   mycontext['seqNumber'] = 1
   mycontext['maxVersion'] = 1
   mycontext['savedMessages'] = {} 
+
+  mycontext['R'] = []
+  mycontext['W'] = []
+  mycontext['readSeqAnswers'] = []
+
 
   mycontext['boardList'] = []
 
@@ -159,7 +217,17 @@ if callfunc == 'initialize':
     ip = getmyip()
     ipfile = open(callargs[1],'r')
     for line in ipfile:
-      mycontext['vessels'].append(line.split()[0])
+      if(line != ip):
+        mycontext['otherVessels'].append(line.split()[0])
+
+    n = len(mycontext['otherVessels'])
+
+    mycontext['R'] = mycontext['otherVessels'][:(n/2-1+n%2)]
+    mycontext['R'].append(ip)
+    print mycontext['R']
+    mycontext['W'] = mycontext['otherVessels'][:(n/2+n%2)]
+    mycontext['W'].append(ip)
+    print mycontext['W']
 
   # Running locally:
   # whenever we get a connection on 127.0.0.1:12345 we'll call board
