@@ -1,22 +1,36 @@
-# Used when a new message is recieved via a POST request; will insert it at the end of te local board with the appripriate logical clock value and broadcast it to the other vessels
+# Used when a new message is recieved via a POST request; will insert it at the end of te local board with the appripriate logical clock value and writeToQuorum it to the other vessels
 def addMessageToInputTable(ip, msg):
   mycontext['inputTableLock'].acquire()
 
-  mycontext['boardList'].append(((mycontext['seqNumber'],ip), msg + str(mycontext['seqNumber'])))    
-  bmsg = getmyip() + ":" + str(mycontext['seqNumber']) + ":" + msg + str(mycontext['seqNumber']) 
-  mycontext['seqNumber'] += 1
+  for ip in mycontext['W']:
+# Send to first vessel in Quorum
+    mycontext['remoteLock'].acquire()
+    sendMessage(ip, mycontext['port'], 'LOCK')
 
+  readQuorum()
   mycontext['inputTableLock'].release()
-  broadcast(bmsg)
+  print 'Write to quorum'
+  writeToQuorum(msg)
+
+
+def lockLocalHost(ip):
+  mycontext['lockLocalHost'].acquire()
+  sendMessage(ip, mycontext['port'], 'REMOTE')
+
+#  mycontext['boardList'].append(((mycontext['seqNumber'],ip), msg + str(mycontext['seqNumber'])))    
+#  bmsg = getmyip() + ":" + str(mycontext['seqNumber']) + ":" + msg + str(mycontext['seqNumber']) 
+#  mycontext['seqNumber'] += 1
+
 
 # Updating local board after recieving a UPT-message from another vessel, with seqNumber handling
 def upDateLocalBoard(msgheader):
 #  seqNumber = int(msgheader[3:].split(":")[1])
 #  ip = msgheader[3:].split(":")[0]
 #  msg = msgheader[3:].split(":")[2]
-  mycontext['inputTableLock'].acquire()
+  print 'upDATE'
+  #mycontext['inputTableLock'].acquire()
   mycontext['boardList'].append(msgheader)
-
+  mycontext['seqNumber'] += 1
 #  if seqNumber >= mycontext['seqNumber']:
 #    mycontext['boardList'].append(((seqNumber,ip), msg ))
 #    mycontext['seqNumber'] = seqNumber + 1
@@ -42,7 +56,7 @@ def upDateLocalBoard(msgheader):
 
     
 
-  mycontext['inputTableLock'].release()
+ # mycontext['inputTableLock'].release()
 
 # Sends a HHTP OK when receiving a webbrowser request
 def sendHTTPOK(sockobj):
@@ -111,7 +125,7 @@ def sendMessage(ip, port, msg, numberOfTries=1000, tryNumber=0):
 
 def readQuorum():
   # This is for performance and ME-protection for the inputtable
-  if mycontext['readLock'].acquire(blocking=0):
+  if mycontext['readLock'].acquire(0):
     msg = 'CHECK'
     for vessel in mycontext['R']:
       sendMessage(vessel, mycontext['port'], msg)
@@ -120,27 +134,39 @@ def readQuorum():
 
     maxSeqNumber = mycontext['seqNumber']
     ip = getmyip()
-
+    print maxSeqNumber
     for tup in mycontext['readSeqAnswers']:
-      tempSeqNumber = tup[0]
+      tempSeqNumber = int(tup[0])
       tempIP = tup[1]
 
       if tempSeqNumber > maxSeqNumber:
         maxSeqNumber = tempSeqNumber
         ip = tempIP
+        print 'changed'
 
+
+    print maxSeqNumber
     if ip != getmyip():
-      copyBoard(ip, mycontext['seqNumber'])
+      # Send this message to other vessel... Not use copyBoard() local
+      print 'Asking ' + ip +' for newest version.'
+      sendMessage(ip, mycontext['port'], 'COPY:' + str(mycontext['seqNumber']))
+      mycontext['copying'].acquire()
+      mycontext['seqNumber'] = maxSeqNumber
+
+#      copyBoard(ip, mycontext['seqNumber'])
     # do things
 
     # unlock
     mycontext['readSeqAnswers'] = []
     mycontext['readLock'].release()
 
-def copyBoard(ip, seqNumber):
-  for content in mycontext['boardList'][seqNumber:]
-    msg ="UPT:" + content
-    sendMessage(ipn, mycontext['port'], msg)
+def copyBoard(ip, msgheader):
+  seqNumber = int(msgheader.split(':')[-1])
+  for content in mycontext['boardList'][seqNumber:]:
+    msg = "PASTE:" + content + ':MORE'
+    sendMessage(ip, mycontext['port'], msg)
+  msg = 'PASTE: :FINISHED'
+  sendMessage(ip, mycontext['port'], msg)
 
 def sendSeqNr(ip):
   msg = 'SEQ:' + str(mycontext['seqNumber']) + ':' + getmyip()
@@ -155,9 +181,9 @@ def receiveSeqNumberLogic(msgheader):
     mycontext['waitForAnswers'].release()
 
 
-def broadcast(newInput):
-  for ipn in mycontext['otherVessels']:
-    msg ="UPT" + newInput + ":" + str(mycontext['seqNumber'])
+def writeToQuorum(newInput):
+  for ipn in mycontext['W']:
+    msg ="UPT:" + newInput
     sendMessage(ipn, mycontext['port'], msg)
 
 # Handles incoming communication
@@ -177,23 +203,45 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
     # UPT-messages handles the updating of mycontext['boardList']
     elif msgheader.startswith( 'UPT' ):
       upDateLocalBoard(msgheader[4:])
+      mycontext['lockLocalHost'].release()
+
     elif msgheader.startswith( 'CHECK' ):
-      sendSeqNumber(ip)
+      sendSeqNr(ip)
     elif msgheader.startswith( 'SEQ' ):
       receiveSeqNumberLogic(msgheader)
+    elif msgheader.startswith( 'REMOTE' ):
+      mycontext['remoteLock'].release()
+    elif msgheader.startswith( 'LOCK' ):
+      lockLocalHost(ip)
+    elif msgheader.startswith( 'COPY' ):
+      copyBoard(ip, msgheader)
+    elif msgheader.startswith( 'PASTE' ):
+      print ' PASTE'
+      if msgheader.endswith( 'MORE' ):
+        print ' MORE'
+        upDateLocalBoard(msgheader.split(':')[1])
+      else:
+        print 'FINISHED'
+        mycontext['copying'].release()
+
 
     stopcomm(thiscommhandle)
 
 	
 if callfunc == 'initialize':
   mycontext['state'] = 'RUNNING'
-  mycontext['otherVessels'] = [] # List of all vessels (not scalable solution)
+  mycontext['vessels'] = [] # List of all vessels (not scalable solution)
   mycontext['htmlinputtable'] = "" # The blackboard
   mycontext['socketLock'] = getlock()
   mycontext['inputTableLock'] = getlock() # Protects the input table
   mycontext['waitForAnswers'] =getlock()
+  mycontext['readLock'] = getlock()
   mycontext['waitForAnswers'].acquire()
-  mycontext['seqNumber'] = 1
+  mycontext['remoteLock'] = getlock()
+  mycontext['lockLocalHost'] = getlock()
+  mycontext['copying'] = getlock()
+  mycontext['copying'].acquire()
+  mycontext['seqNumber'] = 0
   mycontext['maxVersion'] = 1
   mycontext['savedMessages'] = {} 
 
@@ -216,17 +264,20 @@ if callfunc == 'initialize':
 
     ip = getmyip()
     ipfile = open(callargs[1],'r')
+
+    otherVessels = []
     for line in ipfile:
       if(line != ip):
-        mycontext['otherVessels'].append(line.split()[0])
+        otherVessels.append(line.split()[0])
+      mycontext['vessels'].append(line.split()[0])
 
-    n = len(mycontext['otherVessels'])
+    n = len(mycontext['vessels'])
 
-    mycontext['R'] = mycontext['otherVessels'][:(n/2-1+n%2)]
-    mycontext['R'].append(ip)
+    mycontext['R'] = otherVessels[:(n/2-1+n%2)] # This is the read quorum, but the local vessel is missing. Because we don't want to send messages to it.
+#    mycontext['R'].append(ip)
     print mycontext['R']
-    mycontext['W'] = mycontext['otherVessels'][:(n/2+n%2)]
-    mycontext['W'].append(ip)
+    mycontext['W'] = mycontext['vessels'][:(n/2+1+n%2)]
+   # mycontext['W'].append(ip)
     print mycontext['W']
 
   # Running locally:
