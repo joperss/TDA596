@@ -1,62 +1,34 @@
 # Used when a new message is recieved via a POST request; will insert it at the end of te local board with the appripriate logical clock value and writeToQuorum it to the other vessels
 def addMessageToInputTable(ip, msg):
+  # We do this lock to ensure the order of the inputs
+  # and to protect the remote lock-function
   mycontext['inputTableLock'].acquire()
 
+  # Remotly lock nodes in write quorum.
   for ip in mycontext['W']:
-# Send to first vessel in Quorum
     mycontext['remoteLock'].acquire()
     sendMessage(ip, mycontext['port'], 'LOCK')
-
+  #####################################
+  # Update (This is not realy needed in our version due to static write quorum, if non w-quorum write, I need to do a get afterwards)
   readQuorum()
+  # I may release the inputTableLock because all the nodes are remotly locked
+  # meaning that if another thread would try to write
   mycontext['inputTableLock'].release()
+#  readQuorum()
+
   print 'Write to quorum'
   writeToQuorum(msg)
 
-
+# Locks local host and replies that it has been locked.
 def lockLocalHost(ip):
   mycontext['lockLocalHost'].acquire()
   sendMessage(ip, mycontext['port'], 'REMOTE')
 
-#  mycontext['boardList'].append(((mycontext['seqNumber'],ip), msg + str(mycontext['seqNumber'])))    
-#  bmsg = getmyip() + ":" + str(mycontext['seqNumber']) + ":" + msg + str(mycontext['seqNumber']) 
-#  mycontext['seqNumber'] += 1
-
-
-# Updating local board after recieving a UPT-message from another vessel, with seqNumber handling
+# Updating local board after recieving a UPT-message.
+# This function needs to be protected and may only be runned sequentaly.
+# (This is handled elsewhere)
 def upDateLocalBoard(msgheader):
-#  seqNumber = int(msgheader[3:].split(":")[1])
-#  ip = msgheader[3:].split(":")[0]
-#  msg = msgheader[3:].split(":")[2]
-  print 'upDATE'
-  #mycontext['inputTableLock'].acquire()
   mycontext['boardList'].append(msgheader)
-  mycontext['seqNumber'] += 1
-#  if seqNumber >= mycontext['seqNumber']:
-#    mycontext['boardList'].append(((seqNumber,ip), msg ))
-#    mycontext['seqNumber'] = seqNumber + 1
-
-#  else:
-    # Iterates over the board. Checks if the seqNumber is the same as the list items.
-    # If it is, it will compare their IPs and insert it on the right position.
-    # If it reaches a list item that has a bigger seqNumber it will insert on that position.
- #   id = 0
- #   while  len(mycontext['boardList']) > id and int(mycontext['boardList'][id][0][0]) <= seqNumber:
- #     tup = mycontext['boardList'][id]
- #     listItemSeqNumber = int(tup[0][0])
-
-#      if listItemSeqNumber == int(seqNumber):
-#        listItemIP = tup[0][1]
-
-#        if listItemIP > ip:
- #         mycontext['boardList'].insert(id, ((seqNumber,ip),msg))
-  #        mycontext['inputTableLock'].release()
-   #       return
-   #   id += 1
-  #  mycontext['boardList'].insert(id, ((seqNumber,ip),msg))
-
-    
-
- # mycontext['inputTableLock'].release()
 
 # Sends a HHTP OK when receiving a webbrowser request
 def sendHTTPOK(sockobj):
@@ -123,42 +95,36 @@ def sendMessage(ip, port, msg, numberOfTries=1000, tryNumber=0):
     else:
       raise e
 
+# Updates the local board by doing a read from the read quorum.
+# Upon exit this function has updated the local version.
 def readQuorum():
   # This is for performance and ME-protection for the inputtable
-  if mycontext['readLock'].acquire(0):
-    msg = 'CHECK'
-    for vessel in mycontext['R']:
-      sendMessage(vessel, mycontext['port'], msg)
-    # Lock and wait for the messages to arrive
-    mycontext['waitForAnswers'].acquire()
+#  if mycontext['readLock'].acquire(0):
+  msg = 'CHECK'
+  for vessel in mycontext['R']:
+    sendMessage(vessel, mycontext['port'], msg)
+  # Lock and wait for the messages to arrive
+  mycontext['waitForAnswers'].acquire() # Used for synch. between threads
 
-    maxSeqNumber = mycontext['seqNumber']
-    ip = getmyip()
-    print maxSeqNumber
-    for tup in mycontext['readSeqAnswers']:
-      tempSeqNumber = int(tup[0])
-      tempIP = tup[1]
+  # Logic for chosing the newest version
+  maxSeqNumber = len(mycontext['boardList'])
+  ip = getmyip()
 
-      if tempSeqNumber > maxSeqNumber:
-        maxSeqNumber = tempSeqNumber
-        ip = tempIP
-        print 'changed'
+  for tup in mycontext['readSeqAnswers']:
+    tempSeqNumber = int(tup[0])
+    tempIP = tup[1]
+    if tempSeqNumber > maxSeqNumber:
+      maxSeqNumber = tempSeqNumber
+      ip = tempIP
+  ########################################
 
+  if ip != getmyip(): # If I don't have the latest version, get it!
+    # Send a request: I wan't to copy your board
+    sendMessage(ip, mycontext['port'], 'COPY:' + str(len(mycontext['boardList'])))
+    # Wait for him to paste his board into mine.
+    mycontext['copying'].acquire() # Used for synch. between threads
 
-    print maxSeqNumber
-    if ip != getmyip():
-      # Send this message to other vessel... Not use copyBoard() local
-      print 'Asking ' + ip +' for newest version.'
-      sendMessage(ip, mycontext['port'], 'COPY:' + str(mycontext['seqNumber']))
-      mycontext['copying'].acquire()
-      mycontext['seqNumber'] = maxSeqNumber
-
-#      copyBoard(ip, mycontext['seqNumber'])
-    # do things
-
-    # unlock
-    mycontext['readSeqAnswers'] = []
-    mycontext['readLock'].release()
+  mycontext['readSeqAnswers'] = []
 
 def copyBoard(ip, msgheader):
   seqNumber = int(msgheader.split(':')[-1])
@@ -169,7 +135,7 @@ def copyBoard(ip, msgheader):
   sendMessage(ip, mycontext['port'], msg)
 
 def sendSeqNr(ip):
-  msg = 'SEQ:' + str(mycontext['seqNumber']) + ':' + getmyip()
+  msg = 'SEQ:' + str(len(mycontext['boardList'])) + ':' + getmyip()
   sendMessage(ip, mycontext['port'], msg)
 
 def receiveSeqNumberLogic(msgheader):
@@ -179,7 +145,6 @@ def receiveSeqNumberLogic(msgheader):
 
   if len(mycontext['readSeqAnswers']) == len(mycontext['R']):
     mycontext['waitForAnswers'].release()
-
 
 def writeToQuorum(newInput):
   for ipn in mycontext['W']:
@@ -193,7 +158,11 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
   if mycontext['state'] == 'RUNNING': 
     # React depending on message type: HTTP GET or POST, or some other type of communication.
     if msgheader.startswith ('GET' ):
-      readQuorum()
+      # If i'm currently being writed to, I will send my current version
+      # that is at most 1 version behind (because I know that it is currently being updated)
+      if mycontext['lockLocalHost'].acquire(0):
+        readQuorum()
+        mycontext['lockLocalHost'].release()
       sendHTTPOK(sockobj)
     elif msgheader.startswith( 'POST' ):
       addMessageToInputTable(getmyip(), msgheader.split('comment=')[-1])
@@ -229,21 +198,17 @@ def board(ip, port, sockobj, thiscommhandle, listencommhandle):
 
 	
 if callfunc == 'initialize':
-  mycontext['state'] = 'RUNNING'
+  mycontext['state'] = 'RUNNING' # Not really used, but left if one would want to add feature, like fore example leader election
   mycontext['vessels'] = [] # List of all vessels (not scalable solution)
   mycontext['htmlinputtable'] = "" # The blackboard
   mycontext['socketLock'] = getlock()
   mycontext['inputTableLock'] = getlock() # Protects the input table
   mycontext['waitForAnswers'] =getlock()
-  mycontext['readLock'] = getlock()
   mycontext['waitForAnswers'].acquire()
   mycontext['remoteLock'] = getlock()
   mycontext['lockLocalHost'] = getlock()
   mycontext['copying'] = getlock()
   mycontext['copying'].acquire()
-  mycontext['seqNumber'] = 0
-  mycontext['maxVersion'] = 1
-  mycontext['savedMessages'] = {} 
 
   mycontext['R'] = []
   mycontext['W'] = []
@@ -273,12 +238,9 @@ if callfunc == 'initialize':
 
     n = len(mycontext['vessels'])
 
+    # The read quorum also always has the local host. This is handled in the read-methods
     mycontext['R'] = otherVessels[:(n/2-1+n%2)] # This is the read quorum, but the local vessel is missing. Because we don't want to send messages to it.
-#    mycontext['R'].append(ip)
-    print mycontext['R']
     mycontext['W'] = mycontext['vessels'][:(n/2+1+n%2)]
-   # mycontext['W'].append(ip)
-    print mycontext['W']
 
   # Running locally:
   # whenever we get a connection on 127.0.0.1:12345 we'll call board
