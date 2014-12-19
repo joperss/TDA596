@@ -1,4 +1,6 @@
-﻿Comments on Leader election implementation:
-When a vessel has sent its conf-message it dosen't bother to pass forward other vessels
-conf and elect message. With the assumption that all connection are reliable, we feel that this 
-is the most reasonable way to handle it. Other vessels will still receive our conf message and pick that leader.
+﻿Regarding deadlocks and inconsistencies during concurrent read and writes:
+We had some discussion with Ioannis about what would happen if we did read and
+writes concurrently. This could result in duplicate entries if a vessel
+belonging to the write-quorum did a read while another vessel did a write. We
+worked around this by doing a non-blocking lock upon receiving a GET request
+(using the same lock as we would use if the vessel was being locked remotely). This lock is normally only used on the vessels in the write-quorum, which means that the remaining vessels would behave as before (doing a read upon a GET request). The vessels in the write-quorum are at most one message behind, which means a GET request to a vessel will return the most recent version or the second most recent version. 
